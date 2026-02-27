@@ -14,6 +14,7 @@ import (
 	"github.com/superplanehq/superplane/pkg/crypto"
 	"github.com/superplanehq/superplane/pkg/database"
 	"github.com/superplanehq/superplane/pkg/grpc/actions"
+	"github.com/superplanehq/superplane/pkg/grpc/actions/messages"
 	"github.com/superplanehq/superplane/pkg/logging"
 	"github.com/superplanehq/superplane/pkg/models"
 	pb "github.com/superplanehq/superplane/pkg/protos/canvases"
@@ -26,6 +27,19 @@ import (
 )
 
 func UpdateCanvas(ctx context.Context, encryptor crypto.Encryptor, registry *registry.Registry, organizationID string, id string, pbCanvas *pb.Canvas, webhookBaseURL string) (*pb.UpdateCanvasResponse, error) {
+	return UpdateCanvasWithAutoLayout(ctx, encryptor, registry, organizationID, id, pbCanvas, nil, webhookBaseURL)
+}
+
+func UpdateCanvasWithAutoLayout(
+	ctx context.Context,
+	encryptor crypto.Encryptor,
+	registry *registry.Registry,
+	organizationID string,
+	id string,
+	pbCanvas *pb.Canvas,
+	autoLayout *pb.CanvasAutoLayout,
+	webhookBaseURL string,
+) (*pb.UpdateCanvasResponse, error) {
 	canvasID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid canvas id: %v", err)
@@ -46,6 +60,11 @@ func UpdateCanvas(ctx context.Context, encryptor crypto.Encryptor, registry *reg
 	}
 
 	nodes, edges, err := ParseCanvas(registry, organizationID, pbCanvas)
+	if err != nil {
+		return nil, actions.ToStatus(err)
+	}
+
+	nodes, edges, err = applyCanvasAutoLayout(nodes, edges, autoLayout)
 	if err != nil {
 		return nil, actions.ToStatus(err)
 	}
@@ -150,6 +169,10 @@ func UpdateCanvas(ctx context.Context, encryptor crypto.Encryptor, registry *reg
 	protoCanvas, err := SerializeCanvas(existingCanvas, true)
 	if err != nil {
 		return nil, actions.ToStatus(err)
+	}
+
+	if err := messages.NewCanvasUpdatedMessage(existingCanvas.ID.String()).Publish(true); err != nil {
+		log.Errorf("failed to publish canvas updated RabbitMQ message: %v", err)
 	}
 
 	return &pb.UpdateCanvasResponse{

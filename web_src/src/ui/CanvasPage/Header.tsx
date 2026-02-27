@@ -35,6 +35,8 @@ interface HeaderProps {
   autoSaveDisabledTooltip?: string;
   onExportYamlCopy?: () => void;
   onExportYamlDownload?: () => void;
+  topViewMode?: "canvas" | "memory";
+  onTopViewModeChange?: (mode: "canvas" | "memory") => void;
 }
 
 export function Header({
@@ -55,6 +57,8 @@ export function Header({
   autoSaveDisabledTooltip,
   onExportYamlCopy,
   onExportYamlDownload,
+  topViewMode,
+  onTopViewModeChange,
 }: HeaderProps) {
   const { workflowId } = useParams<{ workflowId?: string }>();
   const navigate = useNavigate();
@@ -131,8 +135,8 @@ export function Header({
   return (
     <>
       <header className="bg-white border-b border-slate-950/15">
-        <div className="relative flex items-center justify-between h-12 px-4">
-          <div className="flex items-center gap-3">
+        <div className="relative grid h-12 grid-cols-3 items-center px-4">
+          <div className="flex items-center gap-3 justify-self-start">
             <OrganizationMenuButton organizationId={organizationId} onLogoClick={onLogoClick} />
 
             {/* Canvas Dropdown */}
@@ -201,8 +205,33 @@ export function Header({
             )}
           </div>
 
+          <div className="justify-self-center">
+            {topViewMode && onTopViewModeChange && (
+              <div className="flex items-center rounded-md border border-gray-300 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => onTopViewModeChange("canvas")}
+                  className={`rounded px-2 py-1 text-xs font-medium ${
+                    topViewMode === "canvas" ? "bg-slate-900 text-white" : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Canvas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTopViewModeChange("memory")}
+                  className={`rounded px-2 py-1 text-xs font-medium ${
+                    topViewMode === "memory" ? "bg-slate-900 text-white" : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Memory
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Right side - Auto-save toggle and Save button */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 justify-self-end">
             {onExportYamlCopy && onExportYamlDownload && (
               <Select
                 value={exportAction || undefined}
@@ -217,8 +246,8 @@ export function Header({
                   setExportAction("");
                 }}
               >
-                <SelectTrigger className="w-fit min-w-32">
-                  <SelectValue placeholder="YAML" />
+                <SelectTrigger className="h-5 w-fit min-w-0 rounded-md border-gray-300 px-1 py-0 text-xs font-mono text-gray-500 data-[placeholder]:text-gray-500 shadow-none [&>svg]:hidden">
+                  <SelectValue placeholder=".yaml" />
                 </SelectTrigger>
                 <SelectContent align="end">
                   <SelectItem value="copy">
