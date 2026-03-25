@@ -198,6 +198,9 @@ func (s *Sentry) Configuration() []configuration.Field {
 
 func (s *Sentry) Components() []core.Component {
 	return []core.Component{
+		&GetIssue{},
+		&CreateRelease{},
+		&CreateDeploy{},
 		&UpdateIssue{},
 	}
 }
