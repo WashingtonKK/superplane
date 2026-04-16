@@ -25,7 +25,9 @@ export const listAlertRulesMapper: ComponentBaseMapper = {
       collapsedBackground: "bg-white",
       collapsed: context.node.isCollapsed,
       title: context.node.name || context.componentDefinition.label || "Unnamed component",
-      eventSections: lastExecution ? buildGrafanaEventSections(context.nodes, lastExecution, componentName) : undefined,
+      eventSections: lastExecution
+        ? buildGrafanaEventSections(context.nodes, lastExecution, componentName, { strict: true })
+        : undefined,
       metadata: buildListAlertRulesMetadata(
         context.node.configuration as ListAlertRulesConfiguration | undefined,
         context.node.metadata as ListAlertRulesNodeMetadata | undefined,

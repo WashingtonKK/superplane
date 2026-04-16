@@ -11,6 +11,76 @@ import type {
   UpdateAlertRuleConfiguration,
 } from "./types";
 
+export type BuildGrafanaEventSectionsOptions = {
+  /**
+   * When true (default), require a valid root trigger event and node; otherwise return no sections.
+   * When false, use the same relaxed rules as `baseEventSections` (e.g. missing root event id).
+   */
+  strict?: boolean;
+};
+
+function resolveGrafanaEventDisplayTimestamp(execution: ExecutionInfo): string | undefined {
+  const rootCreated = execution.rootEvent?.createdAt;
+  if (typeof rootCreated === "string" && rootCreated.trim() !== "") {
+    return rootCreated;
+  }
+  if (typeof execution.updatedAt === "string" && execution.updatedAt.trim() !== "") {
+    return execution.updatedAt;
+  }
+  return execution.createdAt;
+}
+
+function buildRelaxedGrafanaEventSections(
+  nodes: NodeInfo[],
+  execution: ExecutionInfo,
+  componentName: string,
+): EventSection[] {
+  const rootTriggerNode = nodes.find((n) => n.id === execution.rootEvent?.nodeId);
+  const rootTriggerRenderer = getTriggerRenderer(rootTriggerNode?.componentName || "");
+  const { title } = rootTriggerRenderer.getTitleAndSubtitle({ event: execution.rootEvent });
+  const eventTitle = title || "Trigger event";
+
+  return [
+    {
+      receivedAt: execution.createdAt ? new Date(execution.createdAt) : undefined,
+      eventTitle: eventTitle,
+      eventSubtitle: execution.createdAt ? renderTimeAgo(new Date(execution.createdAt)) : "-",
+      eventState: getState(componentName)(execution),
+      eventId: execution.rootEvent?.id || "",
+    },
+  ];
+}
+
+function buildStrictGrafanaEventSections(
+  nodes: NodeInfo[],
+  execution: ExecutionInfo,
+  componentName: string,
+): EventSection[] {
+  if (!execution.rootEvent?.id || !execution.createdAt) {
+    return [];
+  }
+
+  const rootTriggerNode = nodes.find((node) => node.id === execution.rootEvent?.nodeId);
+  if (!rootTriggerNode?.componentName) {
+    return [];
+  }
+
+  const displayTime = resolveGrafanaEventDisplayTimestamp(execution) ?? execution.createdAt;
+
+  const rootTriggerRenderer = getTriggerRenderer(rootTriggerNode.componentName);
+  const { title } = rootTriggerRenderer.getTitleAndSubtitle({ event: execution.rootEvent });
+
+  return [
+    {
+      receivedAt: new Date(displayTime),
+      eventTitle: title || "Trigger event",
+      eventSubtitle: renderTimeAgo(new Date(displayTime)),
+      eventState: getState(componentName)(execution),
+      eventId: execution.rootEvent.id,
+    },
+  ];
+}
+
 export function buildAlertRuleMetadata(
   node: NodeInfo,
   options?: {
@@ -76,28 +146,13 @@ export function buildGrafanaEventSections(
   nodes: NodeInfo[],
   execution: ExecutionInfo,
   componentName: string,
+  options?: BuildGrafanaEventSectionsOptions,
 ): EventSection[] {
-  if (!execution.rootEvent?.id || !execution.createdAt) {
-    return [];
+  const strictMode = options?.strict !== false;
+  if (!strictMode) {
+    return buildRelaxedGrafanaEventSections(nodes, execution, componentName);
   }
-
-  const rootTriggerNode = nodes.find((node) => node.id === execution.rootEvent?.nodeId);
-  if (!rootTriggerNode?.componentName) {
-    return [];
-  }
-
-  const rootTriggerRenderer = getTriggerRenderer(rootTriggerNode.componentName);
-  const { title } = rootTriggerRenderer.getTitleAndSubtitle({ event: execution.rootEvent });
-
-  return [
-    {
-      receivedAt: new Date(execution.createdAt),
-      eventTitle: title || "Trigger event",
-      eventSubtitle: renderTimeAgo(new Date(execution.createdAt)),
-      eventState: getState(componentName)(execution),
-      eventId: execution.rootEvent.id,
-    },
-  ];
+  return buildStrictGrafanaEventSections(nodes, execution, componentName);
 }
 
 export function asAlertRule(value: unknown): GrafanaAlertRule | undefined {
