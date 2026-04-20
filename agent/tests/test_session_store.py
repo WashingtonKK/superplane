@@ -1,7 +1,17 @@
 from datetime import UTC, datetime
+from typing import Any
 
-import ai.session_store as session_store
-from ai.session_store import SessionStore, SessionStoreConfig, StoredAgentChatMessageRecord
+import psycopg
+import pytest
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+
+from ai.session_store import (
+    SessionStore,
+    SessionStoreConfig,
+    StoredAgentChat,
+    StoredAgentChatMessageRecord,
+    apply_tool_display_labels_to_messages,
+)
 
 
 def _build_store() -> SessionStore:
@@ -121,12 +131,68 @@ def test_flatten_message_record_ignores_output_tool_returns() -> None:
 
     assert len(messages) == 1
     assert messages[0].role == "tool"
-    assert messages[0].content == "Get canvas"
+    assert messages[0].content == "get_canvas"
     assert messages[0].tool_call_id == "toolu_012wJyWVffYDcQqR3Ne9W6FN"
     assert messages[0].tool_status == "completed"
 
 
-def test_list_agent_chat_messages_skips_unflattenable_records(monkeypatch) -> None:
+def test_flatten_message_record_prefers_superplane_display_label_in_metadata() -> None:
+    now = datetime.now(UTC)
+    store = _build_store()
+    record = StoredAgentChatMessageRecord(
+        id="c8884432-1cdb-473d-b12e-28ccb055f781",
+        chat_id="chat-123",
+        message_index=0,
+        message={
+            "kind": "request",
+            "parts": [
+                {
+                    "content": {"name": "test"},
+                    "outcome": "success",
+                    "metadata": {"superplane_display_label": "Loading canvas details"},
+                    "part_kind": "tool-return",
+                    "timestamp": "2026-03-27T00:01:12.551360Z",
+                    "tool_name": "get_canvas",
+                    "tool_call_id": "toolu_012wJyWVffYDcQqR3Ne9W6FN",
+                },
+            ],
+            "run_id": "43beced1-acec-43b2-abc0-261dc36608ab",
+            "metadata": None,
+            "timestamp": "2026-03-27T00:01:19.265172Z",
+            "instructions": None,
+        },
+        created_at=now,
+        updated_at=now,
+    )
+
+    messages = store._flatten_message_record(record)
+
+    assert len(messages) == 1
+    assert messages[0].role == "tool"
+    assert messages[0].content == "Loading canvas details"
+
+
+def test_apply_tool_display_labels_to_messages_sets_metadata() -> None:
+    original = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                tool_name="get_canvas",
+                content={"ok": True},
+                tool_call_id="call-1",
+            )
+        ]
+    )
+    out = apply_tool_display_labels_to_messages([original], {"call-1": "Loading canvas details"})
+    assert len(out) == 1
+    part = out[0].parts[0]
+    assert isinstance(part, ToolReturnPart)
+    assert isinstance(part.metadata, dict)
+    assert part.metadata.get("superplane_display_label") == "Loading canvas details"
+
+
+def test_list_agent_chat_messages_skips_unflattenable_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     now = datetime.now(UTC)
     store = _build_store()
     records = [
@@ -161,7 +227,18 @@ def test_list_agent_chat_messages_skips_unflattenable_records(monkeypatch) -> No
         ),
     ]
 
-    monkeypatch.setattr(store, "describe_agent_chat", lambda org_id, user_id, canvas_id, chat_id: None)
+    def fake_describe(org_id: str, user_id: str, canvas_id: str, chat_id: str) -> StoredAgentChat:
+        return StoredAgentChat(
+            id=chat_id,
+            org_id=org_id,
+            user_id=user_id,
+            canvas_id=canvas_id,
+            initial_message=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(store, "describe_agent_chat", fake_describe)
     monkeypatch.setattr(store, "list_agent_chat_message_records", lambda chat_id: records)
 
     messages = store.list_agent_chat_messages("org-123", "user-123", "canvas-123", "chat-123")
@@ -171,7 +248,9 @@ def test_list_agent_chat_messages_skips_unflattenable_records(monkeypatch) -> No
     assert messages[0].content == "What is in my canvas?"
 
 
-def test_load_agent_chat_message_history_skips_undeserializable_records(monkeypatch) -> None:
+def test_load_agent_chat_message_history_skips_undeserializable_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     now = datetime.now(UTC)
     store = _build_store()
     records = [
@@ -211,10 +290,11 @@ def test_load_agent_chat_message_history_skips_undeserializable_records(monkeypa
     history = store.load_agent_chat_message_history("chat-123")
 
     assert len(history) == 1
+    assert isinstance(history[0].parts[0], UserPromptPart)
     assert history[0].parts[0].content == "What is in my canvas?"
 
 
-def test_connect_reuses_open_connection_until_closed(monkeypatch) -> None:
+def test_connect_reuses_open_connection_until_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     store = _build_store()
     created_connections: list[object] = []
 
@@ -226,12 +306,12 @@ def test_connect_reuses_open_connection_until_closed(monkeypatch) -> None:
         def close(self) -> None:
             self.closed = True
 
-    def fake_connect(**kwargs):
+    def fake_connect(**kwargs: Any) -> FakeConnection:
         connection = FakeConnection()
         created_connections.append(connection)
         return connection
 
-    monkeypatch.setattr(session_store.psycopg, "connect", fake_connect)
+    monkeypatch.setattr(psycopg, "connect", fake_connect)
 
     first = store._connect()
     second = store._connect()

@@ -123,6 +123,53 @@ service Canvases {
     };
   }
 
+  rpc ApplyCanvasVersionChangeset(ApplyCanvasVersionChangesetRequest) returns (ApplyCanvasVersionChangesetResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/canvases/{canvas_id}/versions/{version_id}"
+      body: "*"
+    };
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Update canvas version with a changeset";
+      description: "Update canvas version with a changeset";
+      tags: "CanvasVersion";
+    };
+  }
+
+  rpc ValidateCanvasVersionChangeset(ValidateCanvasVersionChangesetRequest) returns (ValidateCanvasVersionChangesetResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/canvases/{canvas_id}/versions/{version_id}/validate"
+      body: "*"
+    };
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Validate a canvas version changeset";
+      description: "Validate a canvas version changeset";
+      tags: "CanvasVersion";
+    };
+  }
+
+  rpc DeleteCanvasVersion(DeleteCanvasVersionRequest) returns (DeleteCanvasVersionResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/canvases/{canvas_id}/versions/{version_id}"
+    };
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Discard draft canvas version";
+      description: "Discards a user-owned draft canvas version";
+      tags: "CanvasVersion";
+    };
+  }
+
+  rpc PublishCanvasVersion(PublishCanvasVersionRequest) returns (PublishCanvasVersionResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/canvases/{canvas_id}/versions/{version_id}/publish"
+      body: "*"
+    };
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Publish draft canvas version";
+      description: "Publishes a user-owned draft canvas version directly to live";
+      tags: "CanvasVersion";
+    };
+  }
+
   rpc CreateCanvasChangeRequest(CreateCanvasChangeRequestRequest) returns (CreateCanvasChangeRequestResponse) {
     option (google.api.http) = {
       post: "/api/v1/canvases/{canvas_id}/change-requests"
@@ -461,6 +508,42 @@ message UpdateCanvasVersionResponse {
   CanvasVersion version = 1;
 }
 
+message ApplyCanvasVersionChangesetRequest {
+  string canvas_id = 1;
+  string version_id = 2;
+  CanvasChangeset changeset = 3;
+}
+
+message ApplyCanvasVersionChangesetResponse {
+  CanvasVersion version = 1;
+}
+
+message ValidateCanvasVersionChangesetRequest {
+  string canvas_id = 1;
+  string version_id = 2;
+  CanvasChangeset changeset = 3;
+}
+
+message ValidateCanvasVersionChangesetResponse {
+  CanvasVersion version = 1;
+}
+
+message DeleteCanvasVersionRequest {
+  string canvas_id = 1;
+  string version_id = 2;
+}
+
+message DeleteCanvasVersionResponse {}
+
+message PublishCanvasVersionRequest {
+  string canvas_id = 1;
+  string version_id = 2;
+}
+
+message PublishCanvasVersionResponse {
+  CanvasVersion version = 1;
+}
+
 message CreateCanvasChangeRequestRequest {
   string canvas_id = 1;
   string version_id = 2;
@@ -560,8 +643,7 @@ message Canvas {
 
   message Status {
     repeated CanvasNodeExecution last_executions = 1;
-    repeated CanvasNodeQueueItem next_queue_items = 2;
-    repeated CanvasEvent last_events = 3;
+    repeated CanvasEvent last_events = 2;
   }
 
   Metadata metadata = 1;
@@ -570,14 +652,21 @@ message Canvas {
 }
 
 message CanvasVersion {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_DRAFT = 1;
+    STATE_PUBLISHED = 2;
+    STATE_SNAPSHOT = 3;
+  }
+
   message Metadata {
     string id = 1;
     string canvas_id = 2;
-    UserRef owner = 4;
-    bool is_published = 6;
-    google.protobuf.Timestamp published_at = 7;
-    google.protobuf.Timestamp created_at = 8;
-    google.protobuf.Timestamp updated_at = 9;
+    UserRef owner = 3;
+    State state = 4;
+    google.protobuf.Timestamp published_at = 5;
+    google.protobuf.Timestamp created_at = 6;
+    google.protobuf.Timestamp updated_at = 7;
   }
 
   Metadata metadata = 1;
@@ -732,6 +821,26 @@ message ListChildExecutionsResponse {
   repeated CanvasNodeExecution executions = 1;
 }
 
+//
+// More succint description of a canvas node execution.
+// No input, outputs, root event, children.
+// Used to embed execution information into other messages.
+//
+message CanvasNodeExecutionRef {
+  string id = 1;
+  string node_id = 2;
+  CanvasNodeExecution.State state = 3;
+  CanvasNodeExecution.Result result = 4;
+  CanvasNodeExecution.ResultReason result_reason = 5;
+  string result_message = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+//
+// Full description of a canvas node execution.
+// Should only be used for endpoints specific to executions.
+//
 message CanvasNodeExecution {
   enum State {
     STATE_UNKNOWN = 0;
@@ -762,15 +871,14 @@ message CanvasNodeExecution {
   Result result = 7;
   ResultReason result_reason = 8;
   string result_message = 9;
-  google.protobuf.Struct input = 10;
-  google.protobuf.Struct outputs = 11;
-  google.protobuf.Timestamp created_at = 12;
-  google.protobuf.Timestamp updated_at = 13;
-  google.protobuf.Struct metadata = 14;
-  google.protobuf.Struct configuration = 15;
-  repeated CanvasNodeExecution child_executions = 16;
-  CanvasEvent root_event = 17;
-  UserRef cancelled_by = 18;
+  google.protobuf.Struct outputs = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.Struct metadata = 13;
+  google.protobuf.Struct configuration = 14;
+  repeated CanvasNodeExecution child_executions = 15;
+  CanvasEvent root_event = 16;
+  UserRef cancelled_by = 17;
 }
 
 message CanvasNodeQueueItem {
@@ -844,6 +952,7 @@ message CanvasEvent {
   string custom_name = 5;
   google.protobuf.Struct data = 6;
   google.protobuf.Timestamp created_at = 7;
+  bool root = 8;
 }
 
 message CanvasEventWithExecutions {
@@ -853,7 +962,7 @@ message CanvasEventWithExecutions {
   string channel = 4;
   google.protobuf.Struct data = 5;
   google.protobuf.Timestamp created_at = 6;
-  repeated CanvasNodeExecution executions = 7;
+  repeated CanvasNodeExecutionRef executions = 7;
   string custom_name = 8;
 }
 
@@ -879,6 +988,48 @@ message ResolveExecutionErrorsRequest {
 }
 
 message ResolveExecutionErrorsResponse {}
+
+//
+// CanvasChangeset describes a unit of change for a canvas version.
+//
+message CanvasChangeset {
+  message Change {
+    enum Type {
+      UNSPECIFIED = 0;
+      ADD_NODE = 1;
+      DELETE_NODE = 2;
+      UPDATE_NODE = 3;
+      ADD_EDGE = 4;
+      DELETE_EDGE = 5;
+    }
+
+    message Node {
+      string id = 1;
+      string name = 2;
+      string block = 3;
+      google.protobuf.Struct configuration = 4;
+    }
+
+    message Edge {
+      string source_id = 1;
+      string target_id = 2;
+      string channel = 3;
+    }
+    Type type = 1;
+
+    //
+    // Required for ADD_NODE, UPDATE_NODE, DELETE_NODE
+    //
+    Node node = 2;
+
+    //
+    // Required for ADD_EDGE and DELETE_EDGE
+    //
+    Edge edge = 3;
+  }
+
+  repeated Change changes = 1;
+}
 
 //
 // Standalone messages

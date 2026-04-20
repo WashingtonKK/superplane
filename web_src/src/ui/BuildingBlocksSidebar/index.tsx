@@ -1,28 +1,26 @@
-import type { ComponentsEdge, ComponentsNode, OrganizationsIntegration } from "@/api-client";
+import type {
+  SuperplaneComponentsEdge as ComponentsEdge,
+  SuperplaneComponentsNode as ComponentsNode,
+  OrganizationsIntegration,
+} from "@/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isCustomComponentsEnabled } from "@/lib/env";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/ui/dropdownMenu";
+import type { CanvasOperation } from "@/lib/ai";
 import { getBackgroundColorClass } from "@/lib/colors";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/ui/dropdownMenu";
 import { Plus, Search, Settings2, StickyNote, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COMPONENT_SIDEBAR_WIDTH_STORAGE_KEY } from "../CanvasPage";
 import { ComponentBase } from "../componentBase";
-import {
-  AiChatSession,
-  AiBuilderMessage,
-  AiBuilderProposal,
-  loadChatConversation,
-  loadChatSessions,
-  pushAiMessages,
-  sendChatPrompt,
-} from "./agentChat";
+import type { AgentContext, AiBuilderMessage, AiBuilderProposal, AiChatSession } from "./agentChat";
+import { loadChatConversation, loadChatSessions, pushAiMessages, sendChatPrompt } from "./agentChat";
 import { AiBuilderChatPanel } from "./AiBuilderChatPanel";
 import { CategorySection } from "./CategorySection";
 import type { BuildingBlock, BuildingBlockCategory } from "./types";
+export type { AgentContext, AgentMode } from "./agentChat";
 export type { BuildingBlock, BuildingBlockCategory } from "./types";
 
 const AI_BUILDER_STORAGE_KEY_PREFIX = "sp:canvas-ai-builder:";
@@ -31,7 +29,7 @@ export interface BuildingBlocksSidebarProps {
   isOpen: boolean;
   onToggle: (open: boolean) => void;
   blocks: BuildingBlockCategory[];
-  showAiBuilderTab?: boolean;
+  agentContext: AgentContext;
   canvasId?: string;
   organizationId?: string;
   canvasNodes?: Array<{
@@ -47,7 +45,7 @@ export interface BuildingBlocksSidebarProps {
     edges?: ComponentsEdge[];
   };
   selectedNodeIds?: string[];
-  onApplyAiOperations?: (operations: AiCanvasOperation[]) => Promise<void>;
+  onApplyAiOperations?: (operations: CanvasOperation[]) => Promise<void>;
   integrations?: OrganizationsIntegration[];
   canvasZoom?: number;
   disabled?: boolean;
@@ -56,47 +54,11 @@ export interface BuildingBlocksSidebarProps {
   onAddNote?: () => void;
 }
 
-export type AiCanvasOperation =
-  | {
-      type: "add_node";
-      nodeKey?: string;
-      blockName: string;
-      nodeName?: string;
-      configuration?: Record<string, unknown>;
-      position?: { x: number; y: number };
-      source?: {
-        nodeKey?: string;
-        nodeId?: string;
-        nodeName?: string;
-        handleId?: string | null;
-      };
-    }
-  | {
-      type: "connect_nodes";
-      source: { nodeKey?: string; nodeId?: string; nodeName?: string; handleId?: string | null };
-      target: { nodeKey?: string; nodeId?: string; nodeName?: string };
-    }
-  | {
-      type: "disconnect_nodes";
-      source: { nodeKey?: string; nodeId?: string; nodeName?: string; handleId?: string | null };
-      target: { nodeKey?: string; nodeId?: string; nodeName?: string };
-    }
-  | {
-      type: "update_node_config";
-      target: { nodeKey?: string; nodeId?: string; nodeName?: string };
-      configuration: Record<string, unknown>;
-      nodeName?: string;
-    }
-  | {
-      type: "delete_node";
-      target: { nodeKey?: string; nodeId?: string; nodeName?: string };
-    };
-
 export function BuildingBlocksSidebar({
   isOpen,
   onToggle,
   blocks,
-  showAiBuilderTab = false,
+  agentContext,
   canvasId,
   organizationId,
   onApplyAiOperations,
@@ -124,7 +86,7 @@ export function BuildingBlocksSidebar({
     <OpenBuildingBlocksSidebar
       onToggle={onToggle}
       blocks={blocks}
-      showAiBuilderTab={showAiBuilderTab}
+      agentContext={agentContext}
       canvasId={canvasId}
       organizationId={organizationId}
       onApplyAiOperations={onApplyAiOperations}
@@ -210,10 +172,10 @@ function ClosedBuildingBlocksSidebar({
 interface OpenBuildingBlocksSidebarProps {
   onToggle: (open: boolean) => void;
   blocks: BuildingBlockCategory[];
-  showAiBuilderTab: boolean;
+  agentContext: AgentContext;
   canvasId?: string;
   organizationId?: string;
-  onApplyAiOperations?: (operations: AiCanvasOperation[]) => Promise<void>;
+  onApplyAiOperations?: (operations: CanvasOperation[]) => Promise<void>;
   integrations: OrganizationsIntegration[];
   canvasZoom: number;
   disabled: boolean;
@@ -224,7 +186,7 @@ interface OpenBuildingBlocksSidebarProps {
 function OpenBuildingBlocksSidebar({
   onToggle,
   blocks,
-  showAiBuilderTab,
+  agentContext,
   canvasId,
   organizationId,
   onApplyAiOperations,
@@ -235,7 +197,7 @@ function OpenBuildingBlocksSidebar({
   onBlockClick,
 }: OpenBuildingBlocksSidebarProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "trigger" | "action" | "flow">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "trigger" | "component">("all");
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const aiInputRef = useRef<HTMLTextAreaElement>(null);
@@ -280,6 +242,7 @@ function OpenBuildingBlocksSidebar({
         aiInput,
         canvasId,
         organizationId,
+        agentContext,
         currentChatId,
         isGeneratingResponse,
         setChatSessions,
@@ -292,7 +255,7 @@ function OpenBuildingBlocksSidebar({
         focusInput: () => aiInputRef.current?.focus(),
       });
     },
-    [aiInput, canvasId, currentChatId, isGeneratingResponse, organizationId],
+    [agentContext, aiInput, canvasId, currentChatId, isGeneratingResponse, organizationId],
   );
 
   const handleStartNewChatSession = useCallback(() => {
@@ -315,7 +278,7 @@ function OpenBuildingBlocksSidebar({
     setPendingProposal(null);
   }, []);
 
-  const formatOperation = useCallback((operation: AiCanvasOperation, proposal?: AiBuilderProposal) => {
+  const formatOperation = useCallback((operation: CanvasOperation, proposal?: AiBuilderProposal) => {
     const operationNodeLabels = new Map<string, string>();
     if (proposal) {
       for (const op of proposal.operations) {
@@ -421,10 +384,10 @@ function OpenBuildingBlocksSidebar({
   }, [sidebarWidth]);
 
   useEffect(() => {
-    if (!showAiBuilderTab && activeTab === "ai") {
+    if (!agentContext.enabled && activeTab === "ai") {
       setActiveTab("components");
     }
-  }, [showAiBuilderTab, activeTab]);
+  }, [agentContext.enabled, activeTab]);
 
   useEffect(() => {
     setActiveTab("components");
@@ -603,17 +566,9 @@ function OpenBuildingBlocksSidebar({
     const categoryOrder: Record<string, number> = {
       Core: 0,
       Memory: 1,
-      Bundles: 2,
     };
 
-    const filteredCategories = (blocks || []).filter((category) => {
-      if (category.name === "Bundles" && !isCustomComponentsEnabled()) {
-        return false;
-      }
-      return true;
-    });
-
-    return [...filteredCategories].sort((a, b) => {
+    return [...blocks].sort((a, b) => {
       const aOrder = categoryOrder[a.name] ?? Infinity;
       const bOrder = categoryOrder[b.name] ?? Infinity;
 
@@ -672,8 +627,7 @@ function OpenBuildingBlocksSidebar({
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
               <SelectItem value="trigger">Trigger</SelectItem>
-              <SelectItem value="action">Action</SelectItem>
-              <SelectItem value="flow">Flow</SelectItem>
+              <SelectItem value="component">Action</SelectItem>
             </SelectContent>
           </Select>
           <DropdownMenu>
@@ -766,7 +720,7 @@ function OpenBuildingBlocksSidebar({
         />
       </div>
 
-      {!showAiBuilderTab && (
+      {!agentContext.enabled && (
         <div className="flex items-center justify-between gap-3 px-5 py-4 relative">
           <div className="flex flex-col items-start gap-3 w-full">
             <div className="flex justify-between gap-3 w-full">
@@ -776,7 +730,8 @@ function OpenBuildingBlocksSidebar({
             </div>
             <div
               onClick={() => onToggle(false)}
-              className="absolute top-4 right-4 w-6 h-6 hover:bg-slate-950/5 rounded flex items-center justify-center cursor-pointer leading-none"
+              data-testid="close-sidebar-button"
+              className="absolute top-4 right-4 z-40 w-6 h-6 hover:bg-slate-950/5 rounded flex items-center justify-center cursor-pointer leading-none"
             >
               <X size={16} />
             </div>
@@ -785,11 +740,11 @@ function OpenBuildingBlocksSidebar({
       )}
 
       <Tabs
-        value={showAiBuilderTab ? activeTab : "components"}
+        value={agentContext.enabled ? activeTab : "components"}
         onValueChange={(value) => setActiveTab(value as "components" | "ai")}
-        className={`flex ${showAiBuilderTab ? "h-full" : "h-[calc(100%-82px)]"} flex-col`}
+        className={`flex ${agentContext.enabled ? "h-full" : "h-[calc(100%-82px)]"} flex-col`}
       >
-        {showAiBuilderTab && (
+        {agentContext.enabled && (
           <div className="px-4 pt-3 pb-3 flex items-center gap-1.5 relative">
             <TabsList className="grid h-8 w-auto grid-cols-2 gap-0.5 bg-transparent p-0">
               <TabsTrigger
@@ -808,15 +763,16 @@ function OpenBuildingBlocksSidebar({
             </TabsList>
             <div
               onClick={() => onToggle(false)}
-              className="absolute top-4 right-4 w-6 h-6 hover:bg-slate-950/5 rounded flex items-center justify-center cursor-pointer leading-none"
+              data-testid="close-sidebar-button"
+              className="absolute top-4 right-4 z-40 w-6 h-6 hover:bg-slate-950/5 rounded flex items-center justify-center cursor-pointer leading-none"
             >
               <X size={16} />
             </div>
           </div>
         )}
-        {(!showAiBuilderTab || activeTab === "components") && componentsTabContent}
+        {(!agentContext.enabled || activeTab === "components") && componentsTabContent}
 
-        {showAiBuilderTab && (
+        {agentContext.enabled && (
           <AiBuilderChatPanel
             chatSessions={chatSessions}
             currentChatId={currentChatId}

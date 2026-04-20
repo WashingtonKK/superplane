@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/superplanehq/superplane/pkg/authentication"
+	"github.com/superplanehq/superplane/pkg/authorization"
 	"github.com/superplanehq/superplane/pkg/crypto"
 	"github.com/superplanehq/superplane/pkg/database"
 	"github.com/superplanehq/superplane/pkg/grpc/actions/messages"
@@ -33,6 +34,7 @@ func UpdateCanvasVersion(
 	pbCanvas *pb.Canvas,
 	autoLayout *pb.CanvasAutoLayout,
 	webhookBaseURL string,
+	authService authorization.Authorization,
 ) (*pb.UpdateCanvasVersionResponse, error) {
 	return UpdateCanvasVersionWithUsage(
 		ctx,
@@ -45,6 +47,7 @@ func UpdateCanvasVersion(
 		pbCanvas,
 		autoLayout,
 		webhookBaseURL,
+		authService,
 	)
 }
 
@@ -59,6 +62,7 @@ func UpdateCanvasVersionWithUsage(
 	pbCanvas *pb.Canvas,
 	autoLayout *pb.CanvasAutoLayout,
 	webhookBaseURL string,
+	authService authorization.Authorization,
 ) (*pb.UpdateCanvasVersionResponse, error) {
 	userID, ok := authentication.GetUserIdFromMetadata(ctx)
 	if !ok {
@@ -121,6 +125,7 @@ func UpdateCanvasVersionWithUsage(
 			nodes,
 			edges,
 			webhookBaseURL,
+			authService,
 		)
 	}
 
@@ -149,7 +154,7 @@ func UpdateCanvasVersionWithUsage(
 			return status.Error(codes.PermissionDenied, "version owner mismatch")
 		}
 
-		if version.IsPublished {
+		if version.State == models.CanvasVersionStatePublished {
 			return status.Error(codes.FailedPrecondition, "published versions are immutable")
 		}
 
@@ -165,14 +170,7 @@ func UpdateCanvasVersionWithUsage(
 		version.Edges = datatypes.NewJSONSlice(edges)
 		version.UpdatedAt = &now
 
-		if err := tx.Save(version).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&models.CanvasUserDraft{}).
-			Where("workflow_id = ? AND user_id = ? AND version_id = ?", canvasUUID, userUUID, version.ID).
-			Update("updated_at", now).
-			Error
+		return tx.Save(version).Error
 	})
 	if err != nil {
 		if status.Code(err) != codes.Unknown {
@@ -200,6 +198,7 @@ func updateLiveCanvasWithoutVersioning(
 	nodes []models.Node,
 	edges []models.Edge,
 	webhookBaseURL string,
+	authService authorization.Authorization,
 ) (*pb.UpdateCanvasVersionResponse, error) {
 	organizationID := organizationUUID.String()
 	canvasID := canvas.ID
@@ -208,6 +207,9 @@ func updateLiveCanvasWithoutVersioning(
 	err := database.Conn().Transaction(func(tx *gorm.DB) error {
 		canvasInTx, findCanvasErr := models.FindCanvasInTransaction(tx, organizationUUID, canvasID)
 		if findCanvasErr != nil {
+			if errors.Is(findCanvasErr, gorm.ErrRecordNotFound) {
+				return status.Error(codes.NotFound, "canvas not found")
+			}
 			return findCanvasErr
 		}
 		if canvasInTx.IsTemplate {
@@ -267,7 +269,7 @@ func updateLiveCanvasWithoutVersioning(
 			}
 
 			if workflowNode.State == models.CanvasNodeStateReady {
-				setupErr := setupNode(ctx, tx, encryptor, registry, workflowNode, webhookBaseURL)
+				setupErr := setupNode(ctx, tx, encryptor, registry, workflowNode, organizationUUID, authService, webhookBaseURL)
 				if setupErr != nil {
 					workflowNode.State = models.CanvasNodeStateError
 					errorMsg := setupErr.Error()

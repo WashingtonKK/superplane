@@ -1,10 +1,9 @@
 import json
-import os
 import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,6 +21,10 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from ai.config import config
+
+_SUPERPLANE_TOOL_DISPLAY_LABEL_KEY = "superplane_display_label"
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -33,27 +36,58 @@ def _from_db_time(value: datetime | str) -> datetime:
     return datetime.fromisoformat(value).astimezone(UTC)
 
 
-def _format_tool_label(tool_name: str) -> str:
-    normalized = tool_name.strip().lower()
-    label_by_tool = {
-        "get_canvas_shape": "Reading canvas structure",
-        "get_canvas_details": "Reading canvas details",
-        "list_available_blocks": "Listing available components",
-    }
-    if normalized in label_by_tool:
-        return label_by_tool[normalized]
-
-    words = normalized.replace("_", " ").replace("-", " ").strip()
-    if not words:
-        return "Running tool"
-    return words[:1].upper() + words[1:]
-
-
 def _likely_output_tool_name(tool_name: str | None) -> bool:
     if not isinstance(tool_name, str):
         return False
 
     return tool_name.strip().lower() in {"final_result", "return_canvasanswer", "canvasanswer"}
+
+
+def _flatten_tool_message_label(tool_name: str | None, metadata: Any) -> str:
+    if isinstance(metadata, dict):
+        label = metadata.get(_SUPERPLANE_TOOL_DISPLAY_LABEL_KEY)
+        if isinstance(label, str) and label.strip():
+            return label.strip()
+    cleaned = (tool_name or "").strip()
+    return cleaned or "tool"
+
+
+def apply_tool_display_labels_to_messages(
+    messages: list[ModelMessage],
+    labels_by_call_id: dict[str, str],
+) -> list[ModelMessage]:
+    """Attach UI labels to tool return parts before persisting (replay uses metadata on read)."""
+    if not labels_by_call_id:
+        return messages
+
+    out: list[ModelMessage] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            out.append(message)
+            continue
+
+        new_parts: list[Any] = []
+        changed = False
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and not _likely_output_tool_name(part.tool_name):
+                label = labels_by_call_id.get(part.tool_call_id)
+                if isinstance(label, str) and label.strip():
+                    existing_meta = part.metadata if isinstance(part.metadata, dict) else {}
+                    merged_meta = {
+                        **existing_meta,
+                        _SUPERPLANE_TOOL_DISPLAY_LABEL_KEY: label.strip(),
+                    }
+                    new_parts.append(replace(part, metadata=merged_meta))
+                    changed = True
+                    continue
+            new_parts.append(part)
+
+        if changed:
+            out.append(replace(message, parts=new_parts))
+        else:
+            out.append(message)
+
+    return out
 
 
 def _user_content_to_text(content: Any) -> str:
@@ -129,6 +163,16 @@ class StoredAgentChat:
     initial_message: str | None
     created_at: datetime
     updated_at: datetime
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class StoredAgentChatUsage:
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
 
 
 @dataclass(frozen=True)
@@ -164,20 +208,12 @@ class SessionStoreConfig:
 
     @classmethod
     def from_env(cls) -> "SessionStoreConfig":
-        host = (os.getenv("DB_HOST") or "db").strip()
-        port = int((os.getenv("DB_PORT") or "5432").strip())
-        dbname = (os.getenv("DB_NAME") or "").strip()
-        user = (os.getenv("DB_USERNAME") or "").strip()
-        password = (os.getenv("DB_PASSWORD") or "").strip()
-        sslmode = (os.getenv("DB_SSLMODE") or "disable").strip() or "disable"
-        application_name = (os.getenv("APPLICATION_NAME") or "superplane-agent").strip() or "superplane-agent"
-
         missing_fields = [
             name
             for name, value in (
-                ("DB_NAME", dbname),
-                ("DB_USERNAME", user),
-                ("DB_PASSWORD", password),
+                ("DB_NAME", config.db_name),
+                ("DB_USERNAME", config.db_username),
+                ("DB_PASSWORD", config.db_password),
             )
             if not value
         ]
@@ -186,13 +222,13 @@ class SessionStoreConfig:
             raise ValueError(f"Missing required agent database settings: {joined}")
 
         return cls(
-            host=host,
-            port=port,
-            dbname=dbname,
-            user=user,
-            password=password,
-            sslmode=sslmode,
-            application_name=application_name,
+            host=config.db_host,
+            port=config.db_port,
+            dbname=config.db_name,
+            user=config.db_username,
+            password=config.db_password,
+            sslmode=config.db_sslmode,
+            application_name=config.application_name,
         )
 
 
@@ -208,11 +244,11 @@ class SessionStore:
         self._connections_lock = threading.Lock()
 
     def _connect(self) -> psycopg.Connection[Any]:
-        connection = getattr(self._thread_local, "connection", None)
-        if connection is not None and not connection.closed and not connection.broken:
-            return connection
+        existing = getattr(self._thread_local, "connection", None)
+        if existing is not None and not existing.closed and not existing.broken:
+            return existing  # type: ignore[no-any-return]
 
-        connection = psycopg.connect(
+        connection: psycopg.Connection[Any] = psycopg.connect(
             host=self._config.host,
             port=self._config.port,
             dbname=self._config.dbname,
@@ -252,7 +288,40 @@ class SessionStore:
 
         self._thread_local.connection = None
 
-    def create_agent_chat(self, org_id: str, user_id: str, canvas_id: str, chat_id: str | None = None) -> StoredAgentChat:
+    def get_canvas_memory_markdown(self, canvas_id: str) -> str:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT markdown_body
+                FROM agent_canvas_markdown_memory
+                WHERE canvas_id = %s::uuid
+                LIMIT 1
+                """,
+                (canvas_id,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return ""
+        body = row.get("markdown_body")
+        return body if isinstance(body, str) else ""
+
+    def set_canvas_memory_markdown(self, canvas_id: str, body: str) -> None:
+        text = body.strip()
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_canvas_markdown_memory (canvas_id, markdown_body, updated_at)
+                VALUES (%s::uuid, %s, NOW())
+                ON CONFLICT (canvas_id) DO UPDATE SET
+                    markdown_body = EXCLUDED.markdown_body,
+                    updated_at = NOW()
+                """,
+                (canvas_id, text),
+            )
+
+    def create_agent_chat(
+        self, org_id: str, user_id: str, canvas_id: str, chat_id: str | None = None
+    ) -> StoredAgentChat:
         now = _utcnow()
         chat = StoredAgentChat(
             id=chat_id or str(uuid.uuid4()),
@@ -262,6 +331,9 @@ class SessionStore:
             initial_message=None,
             created_at=now,
             updated_at=now,
+            total_input_tokens=0,
+            total_output_tokens=0,
+            total_tokens=0,
         )
 
         with self._cursor() as cur:
@@ -299,7 +371,9 @@ class SessionStore:
 
         return [self._row_to_agent_chat(row) for row in rows]
 
-    def describe_agent_chat(self, org_id: str, user_id: str, canvas_id: str, chat_id: str) -> StoredAgentChat:
+    def describe_agent_chat(
+        self, org_id: str, user_id: str, canvas_id: str, chat_id: str
+    ) -> StoredAgentChat:
         chat = self.get_agent_chat(chat_id)
         if chat.org_id != org_id or chat.user_id != user_id or chat.canvas_id != canvas_id:
             raise AgentChatNotFoundError(chat_id)
@@ -348,7 +422,9 @@ class SessionStore:
 
         return [self._row_to_message_record(row) for row in rows]
 
-    def list_agent_chat_messages(self, org_id: str, user_id: str, canvas_id: str, chat_id: str) -> list[StoredAgentChatMessage]:
+    def list_agent_chat_messages(
+        self, org_id: str, user_id: str, canvas_id: str, chat_id: str
+    ) -> list[StoredAgentChatMessage]:
         self.describe_agent_chat(org_id, user_id, canvas_id, chat_id)
         records = self.list_agent_chat_message_records(chat_id)
 
@@ -358,7 +434,8 @@ class SessionStore:
                 flattened.extend(self._flatten_message_record(record))
             except Exception as error:
                 print(
-                    f"[agent] failed to flatten chat message record chat_id={chat_id} message_id={record.id}: {error}",
+                    f"[agent] failed to flatten chat message record "
+                    f"chat_id={chat_id} message_id={record.id}: {error}",
                     flush=True,
                 )
         return flattened
@@ -371,12 +448,15 @@ class SessionStore:
                 history.append(_deserialize_model_message(record.message))
             except Exception as error:
                 print(
-                    f"[agent] failed to deserialize chat history record chat_id={chat_id} message_id={record.id}: {error}",
+                    f"[agent] failed to deserialize chat history record "
+                    f"chat_id={chat_id} message_id={record.id}: {error}",
                     flush=True,
                 )
         return history
 
-    def create_agent_chat_model_message(self, chat_id: str, message: ModelMessage) -> StoredAgentChatMessageRecord:
+    def create_agent_chat_model_message(
+        self, chat_id: str, message: ModelMessage, run_id: str | None = None
+    ) -> StoredAgentChatMessageRecord:
         now = _utcnow()
         serialized_message = _serialize_model_message(message)
         created_at = _message_timestamp(message)
@@ -391,12 +471,13 @@ class SessionStore:
             cur.execute(
                 """
                 INSERT INTO agent_chat_messages (
-                    id, chat_id, message_index, message, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                    id, chat_id, run_id, message_index, message, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     message_id,
                     chat_id,
+                    run_id,
                     message_index,
                     Jsonb(serialized_message),
                     created_at,
@@ -432,13 +513,16 @@ class SessionStore:
             )
             row = cur.fetchone()
             if row is not None:
-                cur.execute("UPDATE agent_chats SET updated_at = %s WHERE id = %s", (now, row["chat_id"]))
+                cur.execute(
+                    "UPDATE agent_chats SET updated_at = %s WHERE id = %s", (now, row["chat_id"])
+                )
 
     def replace_agent_chat_messages_after(
         self,
         chat_id: str,
         preserved_message_count: int,
         messages: list[ModelMessage],
+        run_id: str | None = None,
     ) -> None:
         now = _utcnow()
         with self._cursor(transactional=True) as cur:
@@ -461,12 +545,13 @@ class SessionStore:
                 cur.execute(
                     """
                     INSERT INTO agent_chat_messages (
-                        id, chat_id, message_index, message, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                        id, chat_id, run_id, message_index, message, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         str(uuid.uuid4()),
                         chat_id,
+                        run_id,
                         preserved_message_count + offset,
                         Jsonb(serialized_message),
                         created_at,
@@ -491,7 +576,116 @@ class SessionStore:
                 (initial_message.strip(), now, chat_id),
             )
 
-    def _flatten_message_record(self, record: StoredAgentChatMessageRecord) -> list[StoredAgentChatMessage]:
+    def create_agent_chat_run(self, chat_id: str, model: str) -> str:
+        run_id = str(uuid.uuid4())
+        now = _utcnow()
+
+        with self._cursor(transactional=True) as cur:
+            cur.execute("SELECT id FROM agent_chats WHERE id = %s FOR UPDATE", (chat_id,))
+            if cur.fetchone() is None:
+                raise AgentChatNotFoundError(chat_id)
+
+            cur.execute(
+                """
+                INSERT INTO agent_chat_runs (id, chat_id, model, created_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (run_id, chat_id, model, now),
+            )
+
+        return run_id
+
+    def update_run_usage(
+        self,
+        run_id: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int,
+        cache_write_tokens: int,
+        total_tokens: int,
+    ) -> None:
+        now = _utcnow()
+
+        with self._cursor(transactional=True) as cur:
+            cur.execute(
+                """
+                UPDATE agent_chat_runs
+                SET input_tokens = %s,
+                    output_tokens = %s,
+                    cache_read_tokens = %s,
+                    cache_write_tokens = %s,
+                    total_tokens = %s
+                WHERE id = %s
+                RETURNING chat_id
+                """,
+                (
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
+                    total_tokens,
+                    run_id,
+                ),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return
+
+            chat_id = row["chat_id"]
+            cur.execute("SELECT id FROM agent_chats WHERE id = %s FOR UPDATE", (chat_id,))
+            if cur.fetchone() is None:
+                return
+
+            cur.execute(
+                """
+                UPDATE agent_chats
+                SET total_input_tokens = sub.input_tokens,
+                    total_output_tokens = sub.output_tokens,
+                    total_tokens = sub.total_tokens,
+                    updated_at = %s
+                FROM (
+                    SELECT COALESCE(SUM(r.input_tokens), 0) AS input_tokens,
+                           COALESCE(SUM(r.output_tokens), 0) AS output_tokens,
+                           COALESCE(SUM(r.total_tokens), 0) AS total_tokens
+                    FROM agent_chat_runs r
+                    WHERE r.chat_id = %s
+                ) sub
+                WHERE id = %s
+                """,
+                (now, chat_id, chat_id),
+            )
+
+    def get_org_usage(self, org_id: str) -> StoredAgentChatUsage:
+        with self._cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(total_input_tokens), 0) AS total_input_tokens,
+                    COALESCE(SUM(total_output_tokens), 0) AS total_output_tokens,
+                    COALESCE(SUM(total_tokens), 0) AS total_tokens
+                FROM agent_chats
+                WHERE org_id = %s
+                """,
+                (org_id,),
+            )
+            row = cur.fetchone()
+
+        if row is None:
+            return StoredAgentChatUsage(
+                total_input_tokens=0,
+                total_output_tokens=0,
+                total_tokens=0,
+            )
+
+        return StoredAgentChatUsage(
+            total_input_tokens=int(row["total_input_tokens"]),
+            total_output_tokens=int(row["total_output_tokens"]),
+            total_tokens=int(row["total_tokens"]),
+        )
+
+    def _flatten_message_record(
+        self, record: StoredAgentChatMessageRecord
+    ) -> list[StoredAgentChatMessage]:
         model_message = _deserialize_model_message(record.message)
         flattened: list[StoredAgentChatMessage] = []
 
@@ -517,12 +711,13 @@ class SessionStore:
                 if isinstance(part, ToolReturnPart):
                     if _likely_output_tool_name(part.tool_name):
                         continue
+                    tool_label = _flatten_tool_message_label(part.tool_name, part.metadata)
                     flattened.append(
                         StoredAgentChatMessage(
                             id=f"{record.id}:{index}",
                             chat_id=record.chat_id,
                             role="tool",
-                            content=_format_tool_label(part.tool_name),
+                            content=tool_label,
                             tool_call_id=part.tool_call_id,
                             tool_status="completed",
                             created_at=record.created_at,
@@ -533,12 +728,15 @@ class SessionStore:
                 if isinstance(part, RetryPromptPart) and part.tool_name:
                     if _likely_output_tool_name(part.tool_name):
                         continue
+                    tool_label = _flatten_tool_message_label(
+                        part.tool_name, getattr(part, "metadata", None)
+                    )
                     flattened.append(
                         StoredAgentChatMessage(
                             id=f"{record.id}:{index}",
                             chat_id=record.chat_id,
                             role="tool",
-                            content=_format_tool_label(part.tool_name),
+                            content=tool_label,
                             tool_call_id=part.tool_call_id,
                             tool_status="completed",
                             created_at=record.created_at,
@@ -548,7 +746,11 @@ class SessionStore:
             return flattened
 
         if isinstance(model_message, ModelResponse):
-            assistant_parts = [part.content for part in model_message.parts if isinstance(part, TextPart) and part.content]
+            assistant_parts = [
+                part.content
+                for part in model_message.parts
+                if isinstance(part, TextPart) and part.content
+            ]
             assistant_content = "".join(assistant_parts)
             if not assistant_content:
                 assistant_content = _extract_output_tool_answer(record.message)
@@ -573,9 +775,14 @@ class SessionStore:
             org_id=str(row["org_id"]),
             user_id=str(row["user_id"]),
             canvas_id=str(row["canvas_id"]),
-            initial_message=str(row["initial_message"]) if row["initial_message"] is not None else None,
+            initial_message=str(row["initial_message"])
+            if row["initial_message"] is not None
+            else None,
             created_at=_from_db_time(row["created_at"]),
             updated_at=_from_db_time(row["updated_at"]),
+            total_input_tokens=int(row.get("total_input_tokens") or 0),
+            total_output_tokens=int(row.get("total_output_tokens") or 0),
+            total_tokens=int(row.get("total_tokens") or 0),
         )
 
     def _row_to_message_record(self, row: dict[str, Any]) -> StoredAgentChatMessageRecord:

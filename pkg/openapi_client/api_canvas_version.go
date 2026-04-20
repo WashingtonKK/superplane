@@ -24,6 +24,133 @@ import (
 // CanvasVersionAPIService CanvasVersionAPI service
 type CanvasVersionAPIService service
 
+type ApiCanvasesApplyCanvasVersionChangesetRequest struct {
+	ctx        context.Context
+	ApiService *CanvasVersionAPIService
+	canvasId   string
+	versionId  string
+	body       *CanvasesApplyCanvasVersionChangesetBody
+}
+
+func (r ApiCanvasesApplyCanvasVersionChangesetRequest) Body(body CanvasesApplyCanvasVersionChangesetBody) ApiCanvasesApplyCanvasVersionChangesetRequest {
+	r.body = &body
+	return r
+}
+
+func (r ApiCanvasesApplyCanvasVersionChangesetRequest) Execute() (*CanvasesApplyCanvasVersionChangesetResponse, *http.Response, error) {
+	return r.ApiService.CanvasesApplyCanvasVersionChangesetExecute(r)
+}
+
+/*
+CanvasesApplyCanvasVersionChangeset Update canvas version with a changeset
+
+Update canvas version with a changeset
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param canvasId
+	@param versionId
+	@return ApiCanvasesApplyCanvasVersionChangesetRequest
+*/
+func (a *CanvasVersionAPIService) CanvasesApplyCanvasVersionChangeset(ctx context.Context, canvasId string, versionId string) ApiCanvasesApplyCanvasVersionChangesetRequest {
+	return ApiCanvasesApplyCanvasVersionChangesetRequest{
+		ApiService: a,
+		ctx:        ctx,
+		canvasId:   canvasId,
+		versionId:  versionId,
+	}
+}
+
+// Execute executes the request
+//
+//	@return CanvasesApplyCanvasVersionChangesetResponse
+func (a *CanvasVersionAPIService) CanvasesApplyCanvasVersionChangesetExecute(r ApiCanvasesApplyCanvasVersionChangesetRequest) (*CanvasesApplyCanvasVersionChangesetResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodPatch
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *CanvasesApplyCanvasVersionChangesetResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "CanvasVersionAPIService.CanvasesApplyCanvasVersionChangeset")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/api/v1/canvases/{canvasId}/versions/{versionId}"
+	localVarPath = strings.Replace(localVarPath, "{"+"canvasId"+"}", url.PathEscape(parameterValueToString(r.canvasId, "canvasId")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"versionId"+"}", url.PathEscape(parameterValueToString(r.versionId, "versionId")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.body == nil {
+		return localVarReturnValue, nil, reportError("body is required and must be specified")
+	}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.body
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		var v GooglerpcStatus
+		err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+		if err != nil {
+			newErr.error = err.Error()
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+		newErr.model = v
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiCanvasesCreateCanvasVersionRequest struct {
 	ctx        context.Context
 	ApiService *CanvasVersionAPIService
@@ -102,6 +229,122 @@ func (a *CanvasVersionAPIService) CanvasesCreateCanvasVersionExecute(r ApiCanvas
 	}
 	// body params
 	localVarPostBody = r.body
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		var v GooglerpcStatus
+		err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+		if err != nil {
+			newErr.error = err.Error()
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+		newErr.model = v
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ApiCanvasesDeleteCanvasVersionRequest struct {
+	ctx        context.Context
+	ApiService *CanvasVersionAPIService
+	canvasId   string
+	versionId  string
+}
+
+func (r ApiCanvasesDeleteCanvasVersionRequest) Execute() (map[string]interface{}, *http.Response, error) {
+	return r.ApiService.CanvasesDeleteCanvasVersionExecute(r)
+}
+
+/*
+CanvasesDeleteCanvasVersion Discard draft canvas version
+
+Discards a user-owned draft canvas version
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param canvasId
+	@param versionId
+	@return ApiCanvasesDeleteCanvasVersionRequest
+*/
+func (a *CanvasVersionAPIService) CanvasesDeleteCanvasVersion(ctx context.Context, canvasId string, versionId string) ApiCanvasesDeleteCanvasVersionRequest {
+	return ApiCanvasesDeleteCanvasVersionRequest{
+		ApiService: a,
+		ctx:        ctx,
+		canvasId:   canvasId,
+		versionId:  versionId,
+	}
+}
+
+// Execute executes the request
+//
+//	@return map[string]interface{}
+func (a *CanvasVersionAPIService) CanvasesDeleteCanvasVersionExecute(r ApiCanvasesDeleteCanvasVersionRequest) (map[string]interface{}, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodDelete
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue map[string]interface{}
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "CanvasVersionAPIService.CanvasesDeleteCanvasVersion")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/api/v1/canvases/{canvasId}/versions/{versionId}"
+	localVarPath = strings.Replace(localVarPath, "{"+"canvasId"+"}", url.PathEscape(parameterValueToString(r.canvasId, "canvasId")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"versionId"+"}", url.PathEscape(parameterValueToString(r.versionId, "versionId")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
 	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
 	if err != nil {
 		return localVarReturnValue, nil, err
@@ -393,6 +636,133 @@ func (a *CanvasVersionAPIService) CanvasesListCanvasVersionsExecute(r ApiCanvase
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ApiCanvasesPublishCanvasVersionRequest struct {
+	ctx        context.Context
+	ApiService *CanvasVersionAPIService
+	canvasId   string
+	versionId  string
+	body       *map[string]interface{}
+}
+
+func (r ApiCanvasesPublishCanvasVersionRequest) Body(body map[string]interface{}) ApiCanvasesPublishCanvasVersionRequest {
+	r.body = &body
+	return r
+}
+
+func (r ApiCanvasesPublishCanvasVersionRequest) Execute() (*CanvasesPublishCanvasVersionResponse, *http.Response, error) {
+	return r.ApiService.CanvasesPublishCanvasVersionExecute(r)
+}
+
+/*
+CanvasesPublishCanvasVersion Publish draft canvas version
+
+Publishes a user-owned draft canvas version directly to live
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param canvasId
+	@param versionId
+	@return ApiCanvasesPublishCanvasVersionRequest
+*/
+func (a *CanvasVersionAPIService) CanvasesPublishCanvasVersion(ctx context.Context, canvasId string, versionId string) ApiCanvasesPublishCanvasVersionRequest {
+	return ApiCanvasesPublishCanvasVersionRequest{
+		ApiService: a,
+		ctx:        ctx,
+		canvasId:   canvasId,
+		versionId:  versionId,
+	}
+}
+
+// Execute executes the request
+//
+//	@return CanvasesPublishCanvasVersionResponse
+func (a *CanvasVersionAPIService) CanvasesPublishCanvasVersionExecute(r ApiCanvasesPublishCanvasVersionRequest) (*CanvasesPublishCanvasVersionResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodPatch
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *CanvasesPublishCanvasVersionResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "CanvasVersionAPIService.CanvasesPublishCanvasVersion")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/api/v1/canvases/{canvasId}/versions/{versionId}/publish"
+	localVarPath = strings.Replace(localVarPath, "{"+"canvasId"+"}", url.PathEscape(parameterValueToString(r.canvasId, "canvasId")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"versionId"+"}", url.PathEscape(parameterValueToString(r.versionId, "versionId")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.body == nil {
+		return localVarReturnValue, nil, reportError("body is required and must be specified")
+	}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.body
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		var v GooglerpcStatus
+		err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+		if err != nil {
+			newErr.error = err.Error()
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+		newErr.model = v
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiCanvasesUpdateCanvasVersionRequest struct {
 	ctx        context.Context
 	ApiService *CanvasVersionAPIService
@@ -571,6 +941,133 @@ func (a *CanvasVersionAPIService) CanvasesUpdateCanvasVersion2Execute(r ApiCanva
 
 	localVarPath := localBasePath + "/api/v1/canvases/{canvasId}/versions"
 	localVarPath = strings.Replace(localVarPath, "{"+"canvasId"+"}", url.PathEscape(parameterValueToString(r.canvasId, "canvasId")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.body == nil {
+		return localVarReturnValue, nil, reportError("body is required and must be specified")
+	}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.body
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		var v GooglerpcStatus
+		err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+		if err != nil {
+			newErr.error = err.Error()
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+		newErr.model = v
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ApiCanvasesValidateCanvasVersionChangesetRequest struct {
+	ctx        context.Context
+	ApiService *CanvasVersionAPIService
+	canvasId   string
+	versionId  string
+	body       *CanvasesValidateCanvasVersionChangesetBody
+}
+
+func (r ApiCanvasesValidateCanvasVersionChangesetRequest) Body(body CanvasesValidateCanvasVersionChangesetBody) ApiCanvasesValidateCanvasVersionChangesetRequest {
+	r.body = &body
+	return r
+}
+
+func (r ApiCanvasesValidateCanvasVersionChangesetRequest) Execute() (*CanvasesValidateCanvasVersionChangesetResponse, *http.Response, error) {
+	return r.ApiService.CanvasesValidateCanvasVersionChangesetExecute(r)
+}
+
+/*
+CanvasesValidateCanvasVersionChangeset Validate a canvas version changeset
+
+Validate a canvas version changeset
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param canvasId
+	@param versionId
+	@return ApiCanvasesValidateCanvasVersionChangesetRequest
+*/
+func (a *CanvasVersionAPIService) CanvasesValidateCanvasVersionChangeset(ctx context.Context, canvasId string, versionId string) ApiCanvasesValidateCanvasVersionChangesetRequest {
+	return ApiCanvasesValidateCanvasVersionChangesetRequest{
+		ApiService: a,
+		ctx:        ctx,
+		canvasId:   canvasId,
+		versionId:  versionId,
+	}
+}
+
+// Execute executes the request
+//
+//	@return CanvasesValidateCanvasVersionChangesetResponse
+func (a *CanvasVersionAPIService) CanvasesValidateCanvasVersionChangesetExecute(r ApiCanvasesValidateCanvasVersionChangesetRequest) (*CanvasesValidateCanvasVersionChangesetResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodPatch
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *CanvasesValidateCanvasVersionChangesetResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "CanvasVersionAPIService.CanvasesValidateCanvasVersionChangeset")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/api/v1/canvases/{canvasId}/versions/{versionId}/validate"
+	localVarPath = strings.Replace(localVarPath, "{"+"canvasId"+"}", url.PathEscape(parameterValueToString(r.canvasId, "canvasId")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"versionId"+"}", url.PathEscape(parameterValueToString(r.versionId, "versionId")), -1)
 
 	localVarHeaderParams := make(map[string]string)
 	localVarQueryParams := url.Values{}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,22 +19,22 @@ import (
 func Test__QueryDataSource__Setup(t *testing.T) {
 	component := QueryDataSource{}
 
-	t.Run("data source uid is required", func(t *testing.T) {
+	t.Run("data source is required", func(t *testing.T) {
 		err := component.Setup(core.SetupContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "",
-				"query":         "up",
+				"dataSource": "",
+				"query":      "up",
 			},
 		})
 
-		require.ErrorContains(t, err, "dataSourceUid is required")
+		require.ErrorContains(t, err, "dataSource is required")
 	})
 
 	t.Run("query is required", func(t *testing.T) {
 		err := component.Setup(core.SetupContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "logs",
-				"query":         "",
+				"dataSource": "logs",
+				"query":      "",
 			},
 		})
 
@@ -43,13 +44,14 @@ func Test__QueryDataSource__Setup(t *testing.T) {
 	t.Run("valid configuration passes", func(t *testing.T) {
 		err := component.Setup(core.SetupContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "logs",
-				"query":         "{}",
+				"dataSource": "logs",
+				"query":      "{}",
 			},
 		})
 
 		require.NoError(t, err)
 	})
+
 }
 
 func Test__QueryDataSource__Configuration__UsesIntegrationResourceForDataSource(t *testing.T) {
@@ -58,7 +60,7 @@ func Test__QueryDataSource__Configuration__UsesIntegrationResourceForDataSource(
 
 	var dataSourceField *configuration.Field
 	for i := range fields {
-		if fields[i].Name == "dataSourceUid" {
+		if fields[i].Name == "dataSource" {
 			dataSourceField = &fields[i]
 			break
 		}
@@ -77,8 +79,8 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 	t.Run("invalid configuration returns validation error", func(t *testing.T) {
 		err := component.Execute(core.ExecutionContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "",
-				"query":         "up",
+				"dataSource": "",
+				"query":      "up",
 			},
 			Integration: &contexts.IntegrationContext{
 				Configuration: map[string]any{
@@ -89,7 +91,7 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 			ExecutionState: &contexts.ExecutionStateContext{},
 		})
 
-		require.ErrorContains(t, err, "dataSourceUid is required")
+		require.ErrorContains(t, err, "dataSource is required")
 	})
 
 	t.Run("successful query emits result", func(t *testing.T) {
@@ -109,10 +111,10 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 		execCtx := &contexts.ExecutionStateContext{}
 		err := component.Execute(core.ExecutionContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "logs",
-				"query":         "{}",
-				"timeFrom":      "now-5m",
-				"timeTo":        "now",
+				"dataSource": "logs",
+				"query":      "{}",
+				"timeFrom":   "now-5m",
+				"timeTo":     "now",
 			},
 			HTTP: httpContext,
 			Integration: &contexts.IntegrationContext{
@@ -143,10 +145,10 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 
 		err := component.Execute(core.ExecutionContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "bfcwd2pm79hj4c",
-				"query":         "up",
-				"timeFrom":      "now-5m",
-				"timeTo":        "now",
+				"dataSource": "bfcwd2pm79hj4c",
+				"query":      "up",
+				"timeFrom":   "now-5m",
+				"timeTo":     "now",
 			},
 			HTTP: httpContext,
 			Integration: &contexts.IntegrationContext{
@@ -173,6 +175,107 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 		assert.Equal(t, "bfcwd2pm79hj4c", datasource["uid"])
 		assert.Equal(t, "up", query["query"])
 		assert.Equal(t, "up", query["expr"])
+		assert.Equal(t, "now-5m", body["from"])
+		assert.Equal(t, "now", body["to"])
+	})
+
+	t.Run("datetime picker values are converted to unix millis", func(t *testing.T) {
+		httpContext := &contexts.HTTPContext{
+			Responses: []*http.Response{
+				{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"results": {}}`)),
+				},
+			},
+		}
+
+		err := component.Execute(core.ExecutionContext{
+			Configuration: map[string]any{
+				"dataSource": "logs",
+				"query":      "{}",
+				"timeFrom":   "2026-04-01T10:15",
+				"timeTo":     "2026-04-01T11:45",
+			},
+			HTTP: httpContext,
+			Integration: &contexts.IntegrationContext{
+				Configuration: map[string]any{
+					"apiToken": "token123",
+					"baseURL":  "https://grafana.example.com",
+				},
+			},
+			ExecutionState: &contexts.ExecutionStateContext{},
+		})
+
+		require.NoError(t, err)
+		require.Len(t, httpContext.Requests, 1)
+
+		body := decodeJSONBody(t, httpContext.Requests[0].Body)
+		assert.Equal(t, "1775038500000", body["from"])
+		assert.Equal(t, "1775043900000", body["to"])
+	})
+
+	t.Run("timezone aware timestamps are converted without timezone field", func(t *testing.T) {
+		httpContext := &contexts.HTTPContext{
+			Responses: []*http.Response{
+				{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"results": {}}`)),
+				},
+			},
+		}
+
+		err := component.Execute(core.ExecutionContext{
+			Configuration: map[string]any{
+				"dataSource": "logs",
+				"query":      "{}",
+				"timeFrom":   "2026-04-01T10:15:00+05:00",
+				"timeTo":     "2026-04-01T11:45:00+05:00",
+			},
+			HTTP: httpContext,
+			Integration: &contexts.IntegrationContext{
+				Configuration: map[string]any{
+					"apiToken": "token123",
+					"baseURL":  "https://grafana.example.com",
+				},
+			},
+			ExecutionState: &contexts.ExecutionStateContext{},
+		})
+
+		require.NoError(t, err)
+		require.Len(t, httpContext.Requests, 1)
+
+		body := decodeJSONBody(t, httpContext.Requests[0].Body)
+		assert.Equal(t, "1775020500000", body["from"])
+		assert.Equal(t, "1775025900000", body["to"])
+	})
+
+	t.Run("datetime picker values do not require timezone", func(t *testing.T) {
+		httpContext := &contexts.HTTPContext{
+			Responses: []*http.Response{
+				{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"results": {}}`)),
+				},
+			},
+		}
+
+		err := component.Execute(core.ExecutionContext{
+			Configuration: map[string]any{
+				"dataSource": "logs",
+				"query":      "{}",
+				"timeFrom":   "2026-04-01T10:15",
+			},
+			HTTP: httpContext,
+			Integration: &contexts.IntegrationContext{
+				Configuration: map[string]any{
+					"apiToken": "token123",
+					"baseURL":  "https://grafana.example.com",
+				},
+			},
+			ExecutionState: &contexts.ExecutionStateContext{},
+		})
+
+		require.NoError(t, err)
 	})
 
 	t.Run("defaults time range when missing", func(t *testing.T) {
@@ -187,8 +290,8 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 
 		err := component.Execute(core.ExecutionContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "logs",
-				"query":         "{}",
+				"dataSource": "logs",
+				"query":      "{}",
 			},
 			HTTP: httpContext,
 			Integration: &contexts.IntegrationContext{
@@ -225,8 +328,8 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 
 		err := component.Execute(core.ExecutionContext{
 			Configuration: map[string]any{
-				"dataSourceUid": "logs",
-				"query":         "{}",
+				"dataSource": "logs",
+				"query":      "{}",
 			},
 			HTTP: httpContext,
 			Integration: &contexts.IntegrationContext{
@@ -240,6 +343,15 @@ func Test__QueryDataSource__Execute(t *testing.T) {
 
 		require.ErrorContains(t, err, "grafana query failed with status 400")
 	})
+}
+
+func Test__parseGrafanaQueryTime__acceptsGoTimeStringOutput(t *testing.T) {
+	value := "2026-04-08 11:53:05.86655651 +0000 UTC"
+
+	parsed, ok, err := parseGrafanaQueryTime(value, nil)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, time.Date(2026, time.April, 8, 11, 53, 5, 866556510, time.UTC), parsed.UTC())
 }
 
 func decodeJSONBody(t *testing.T, body io.ReadCloser) map[string]any {

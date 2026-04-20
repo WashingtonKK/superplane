@@ -19,11 +19,12 @@ import { showErrorToast } from "../../lib/toast";
 import { CLIPanel } from "@/components/CanvasCreation/CLIPanel";
 import { AgentPanel } from "@/components/CanvasCreation/AgentPanel";
 import { ImportYamlDialog } from "./ImportYamlDialog";
-import type { CanvasesCanvas, ComponentsEdge, ComponentsNode } from "@/api-client";
+import type { CanvasesCanvas, SuperplaneComponentsEdge, SuperplaneComponentsNode } from "@/api-client";
 import { LayoutTemplate, Monitor, Rainbow, Sparkles, Terminal, Upload } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getIntegrationIconSrc } from "@/ui/componentSidebar/integrationIcons";
 import { extractIntegrations, getTemplateTags, countNodesByType } from "./templateMetadata";
+import { NodeCountLabel, TagBadges } from "./components/TemplateCardMeta";
 
 const MAX_CANVAS_NAME_LENGTH = 50;
 const MAX_CANVAS_DESCRIPTION_LENGTH = 200;
@@ -187,10 +188,14 @@ export function CreateCanvasPage() {
                     </Alert>
                   ) : null}
                   <Field>
-                    <Label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <Label
+                      htmlFor="create-canvas-page-name-input"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
                       Canvas name *
                     </Label>
                     <Input
+                      id="create-canvas-page-name-input"
                       data-testid="canvas-name-input"
                       type="text"
                       autoComplete="off"
@@ -224,10 +229,14 @@ export function CreateCanvasPage() {
                   </Field>
 
                   <Field>
-                    <Label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <Label
+                      htmlFor="create-canvas-page-description-input"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
                       Description
                     </Label>
                     <Textarea
+                      id="create-canvas-page-description-input"
                       value={description}
                       onChange={(e) => {
                         if (e.target.value.length <= MAX_CANVAS_DESCRIPTION_LENGTH) {
@@ -343,14 +352,6 @@ interface TemplateCardProps {
   showTags?: boolean;
 }
 
-function NodeCountLabel({ components, triggers }: { components: number; triggers: number }) {
-  const parts: string[] = [];
-  if (components > 0) parts.push(`${components} ${components === 1 ? "component" : "components"}`);
-  if (triggers > 0) parts.push(`${triggers} ${triggers === 1 ? "trigger" : "triggers"}`);
-  if (parts.length === 0) return null;
-  return <div className="text-xs text-gray-500 dark:text-gray-500 mt-2">{parts.join(" · ")}</div>;
-}
-
 function IntegrationIcons({ integrations }: { integrations: string[] }) {
   if (integrations.length === 0) {
     return <span className="text-[11px] text-gray-400 dark:text-gray-500">No integrations needed</span>;
@@ -378,24 +379,11 @@ function IntegrationIcons({ integrations }: { integrations: string[] }) {
   );
 }
 
-function TagBadges({ tags }: { tags: string[] }) {
-  if (tags.length === 0) return <div />;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {tags.map((tag) => (
-        <Badge key={tag} variant="outline" className="text-[11px] px-1.5 py-0 text-gray-600 dark:text-gray-400">
-          {tag}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
 export function TemplateCard({ template, organizationId, showTags = false }: TemplateCardProps) {
   const metadata = template.metadata;
   const nodes = template.spec?.nodes;
-  const previewNodes = (nodes ?? []) as ComponentsNode[];
-  const previewEdges = (template.spec?.edges ?? []) as ComponentsEdge[];
+  const previewNodes = (nodes ?? []) as SuperplaneComponentsNode[];
+  const previewEdges = (template.spec?.edges ?? []) as SuperplaneComponentsEdge[];
   const templateId = metadata?.id;
 
   if (!templateId) return null;
@@ -449,14 +437,14 @@ export function TemplateCard({ template, organizationId, showTags = false }: Tem
 }
 
 interface CanvasMiniMapProps {
-  nodes?: ComponentsNode[];
-  edges?: ComponentsEdge[];
+  nodes?: SuperplaneComponentsNode[];
+  edges?: SuperplaneComponentsEdge[];
 }
 
 function CanvasMiniMap({ nodes = [], edges = [] }: CanvasMiniMapProps) {
   const positionedNodes = nodes.filter(
     (node) => typeof node.position?.x === "number" && typeof node.position?.y === "number",
-  ) as Array<ComponentsNode & { position: { x: number; y: number } }>;
+  ) as Array<SuperplaneComponentsNode & { position: { x: number; y: number } }>;
 
   if (!positionedNodes.length) {
     return (

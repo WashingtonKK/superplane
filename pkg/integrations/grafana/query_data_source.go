@@ -18,11 +18,11 @@ import (
 type QueryDataSource struct{}
 
 type QueryDataSourceSpec struct {
-	DataSourceUID string  `json:"dataSourceUid"`
-	Query         string  `json:"query"`
-	TimeFrom      *string `json:"timeFrom,omitempty"`
-	TimeTo        *string `json:"timeTo,omitempty"`
-	Format        *string `json:"format,omitempty"`
+	DataSource string  `json:"dataSource" mapstructure:"dataSource"`
+	Query      string  `json:"query" mapstructure:"query"`
+	TimeFrom   *string `json:"timeFrom,omitempty" mapstructure:"timeFrom"`
+	TimeTo     *string `json:"timeTo,omitempty" mapstructure:"timeTo"`
+	Format     *string `json:"format,omitempty" mapstructure:"format"`
 }
 
 type grafanaQueryRequest struct {
@@ -38,6 +38,8 @@ type grafanaQuery struct {
 	Query      string `json:"query,omitempty"`
 	Format     string `json:"format,omitempty"`
 }
+
+const grafanaDateTimeFormat = "2006-01-02T15:04"
 
 func (q *QueryDataSource) Name() string {
 	return "grafana.queryDataSource"
@@ -62,9 +64,10 @@ func (q *QueryDataSource) Documentation() string {
 
 ## Configuration
 
-- **Data Source UID**: The Grafana datasource UID to query
+- **Data Source**: The Grafana data source to query
 - **Query**: The datasource query (PromQL, InfluxQL, etc.)
-- **Time From / Time To**: Optional time range (relative like "now-5m" or absolute)
+- **Time From / Time To**: Optional datetime picker values for the query range. Datetime values without an explicit offset are interpreted as UTC.
+- If omitted, SuperPlane defaults the query to the last 5 minutes
 - **Format**: Optional query format (depends on the datasource)
 
 ## Output
@@ -88,11 +91,11 @@ func (q *QueryDataSource) OutputChannels(configuration any) []core.OutputChannel
 func (q *QueryDataSource) Configuration() []configuration.Field {
 	return []configuration.Field{
 		{
-			Name:        "dataSourceUid",
-			Label:       "Data Source UID",
+			Name:        "dataSource",
+			Label:       "Data Source",
 			Type:        configuration.FieldTypeIntegrationResource,
 			Required:    true,
-			Description: "The Grafana datasource UID to query",
+			Description: "The Grafana data source to query",
 			TypeOptions: &configuration.TypeOptions{
 				Resource: &configuration.ResourceTypeOptions{
 					Type: resourceTypeDataSource,
@@ -110,18 +113,26 @@ func (q *QueryDataSource) Configuration() []configuration.Field {
 		{
 			Name:        "timeFrom",
 			Label:       "Time From",
-			Type:        configuration.FieldTypeString,
+			Type:        configuration.FieldTypeDateTime,
 			Required:    false,
-			Description: "Start time (e.g. now-5m or 2024-01-01T00:00:00Z)",
-			Placeholder: "now-5m",
+			Description: "Optional start of the query time range",
+			TypeOptions: &configuration.TypeOptions{
+				DateTime: &configuration.DateTimeTypeOptions{
+					Format: "2006-01-02T15:04",
+				},
+			},
 		},
 		{
 			Name:        "timeTo",
 			Label:       "Time To",
-			Type:        configuration.FieldTypeString,
+			Type:        configuration.FieldTypeDateTime,
 			Required:    false,
-			Description: "End time (e.g. now or 2024-01-01T01:00:00Z)",
-			Placeholder: "now",
+			Description: "Optional end of the query time range",
+			TypeOptions: &configuration.TypeOptions{
+				DateTime: &configuration.DateTimeTypeOptions{
+					Format: "2006-01-02T15:04",
+				},
+			},
 		},
 		{
 			Name:        "format",
@@ -160,7 +171,7 @@ func (q *QueryDataSource) Execute(ctx core.ExecutionContext) error {
 		Queries: []grafanaQuery{
 			{
 				RefID:      "A",
-				Datasource: map[string]string{"uid": strings.TrimSpace(spec.DataSourceUID)},
+				Datasource: map[string]string{"uid": strings.TrimSpace(spec.DataSource)},
 				Expr:       strings.TrimSpace(spec.Query),
 				Query:      strings.TrimSpace(spec.Query),
 			},
@@ -168,11 +179,17 @@ func (q *QueryDataSource) Execute(ctx core.ExecutionContext) error {
 	}
 
 	if spec.TimeFrom != nil && strings.TrimSpace(*spec.TimeFrom) != "" {
-		request.From = strings.TrimSpace(*spec.TimeFrom)
+		request.From, err = resolveQueryTimeValue(*spec.TimeFrom, nil)
+		if err != nil {
+			return fmt.Errorf("invalid timeFrom value %q: %w", strings.TrimSpace(*spec.TimeFrom), err)
+		}
 	}
 
 	if spec.TimeTo != nil && strings.TrimSpace(*spec.TimeTo) != "" {
-		request.To = strings.TrimSpace(*spec.TimeTo)
+		request.To, err = resolveQueryTimeValue(*spec.TimeTo, nil)
+		if err != nil {
+			return fmt.Errorf("invalid timeTo value %q: %w", strings.TrimSpace(*spec.TimeTo), err)
+		}
 	}
 
 	if request.From == "" || request.To == "" {
@@ -245,6 +262,50 @@ func defaultTimeRange() (string, string) {
 	return fmt.Sprintf("%d", from.UnixMilli()), fmt.Sprintf("%d", now.UnixMilli())
 }
 
+func resolveQueryTimeValue(value string, timezone *string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	if parsed, ok, err := parseGrafanaQueryTime(trimmed, timezone); err != nil {
+		return "", err
+	} else if ok {
+		return fmt.Sprintf("%d", parsed.UTC().UnixMilli()), nil
+	}
+
+	return trimmed, nil
+}
+
+func parseGrafanaQueryTime(value string, timezone *string) (time.Time, bool, error) {
+	for _, format := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04Z07:00",
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+	} {
+		if parsed, err := time.Parse(format, value); err == nil {
+			return parsed, true, nil
+		}
+	}
+
+	for _, format := range []string{"2006-01-02T15:04:05", grafanaDateTimeFormat} {
+		if _, err := time.Parse(format, value); err != nil {
+			continue
+		}
+
+		parsed, err := time.ParseInLocation(format, value, time.UTC)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+
+		return parsed, true, nil
+	}
+
+	return time.Time{}, false, nil
+}
+
 func decodeQueryDataSourceSpec(configuration any) (QueryDataSourceSpec, error) {
 	spec := QueryDataSourceSpec{}
 	if err := mapstructure.Decode(configuration, &spec); err != nil {
@@ -255,12 +316,27 @@ func decodeQueryDataSourceSpec(configuration any) (QueryDataSourceSpec, error) {
 }
 
 func validateQueryDataSourceSpec(spec QueryDataSourceSpec) error {
-	if strings.TrimSpace(spec.DataSourceUID) == "" {
-		return errors.New("dataSourceUid is required")
+	if strings.TrimSpace(spec.DataSource) == "" {
+		return errors.New("dataSource is required")
 	}
 	if strings.TrimSpace(spec.Query) == "" {
 		return errors.New("query is required")
 	}
+	if err := validateQueryTimeValue(spec.TimeFrom, nil); err != nil {
+		return fmt.Errorf("timeFrom: %w", err)
+	}
+	if err := validateQueryTimeValue(spec.TimeTo, nil); err != nil {
+		return fmt.Errorf("timeTo: %w", err)
+	}
 
 	return nil
+}
+
+func validateQueryTimeValue(value *string, timezone *string) error {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil
+	}
+
+	_, _, err := parseGrafanaQueryTime(strings.TrimSpace(*value), timezone)
+	return err
 }

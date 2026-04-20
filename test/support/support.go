@@ -102,6 +102,22 @@ func SetupWithOptions(t require.TestingT, options SetupOptions) *ResourceRegistr
 		t.FailNow()
 	}
 
+	accountProvider := &models.AccountProvider{
+		AccountID:  account.ID,
+		Provider:   "github",
+		ProviderID: "testuser",
+		Username:   "testuser",
+		Email:      account.Email,
+		Name:       account.Name,
+		AvatarURL:  "https://github.com/testuser.png",
+	}
+
+	err = tx.Create(accountProvider).Error
+	if !assert.NoError(t, err) {
+		tx.Rollback()
+		t.FailNow()
+	}
+
 	user, err := models.CreateUserInTransaction(tx, organization.ID, account.ID, account.Email, account.Name)
 	if !assert.NoError(t, err) {
 		tx.Rollback()
@@ -385,7 +401,7 @@ func CreateCanvas(t require.TestingT, orgID uuid.UUID, userID uuid.UUID, nodes [
 			ID:          liveVersionID,
 			WorkflowID:  workflow.ID,
 			OwnerID:     &userID,
-			IsPublished: true,
+			State:       models.CanvasVersionStatePublished,
 			PublishedAt: &now,
 			Nodes:       datatypes.NewJSONSlice(expandedNodes),
 			Edges:       datatypes.NewJSONSlice(edges),

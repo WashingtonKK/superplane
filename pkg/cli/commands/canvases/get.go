@@ -40,7 +40,7 @@ func (c *getCommand) Execute(ctx core.CommandContext) error {
 		if err != nil {
 			return err
 		}
-		currentUserID := strings.TrimSpace(me.GetId())
+		currentUserID := strings.TrimSpace(me.User.GetId())
 		if currentUserID == "" {
 			return fmt.Errorf("current user id not found")
 		}
@@ -98,7 +98,7 @@ func findOwnedDraftVersionID(ctx core.CommandContext, canvasID string, userID st
 
 		for _, version := range response.GetVersions() {
 			metadata := version.GetMetadata()
-			if metadata.GetIsPublished() {
+			if metadata.GetState() == openapi_client.CANVASESCANVASVERSIONSTATE_STATE_PUBLISHED {
 				continue
 			}
 

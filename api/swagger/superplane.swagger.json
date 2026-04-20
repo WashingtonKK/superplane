@@ -1567,6 +1567,42 @@
           "CanvasVersion"
         ]
       },
+      "delete": {
+        "summary": "Discard draft canvas version",
+        "description": "Discards a user-owned draft canvas version",
+        "operationId": "Canvases_DeleteCanvasVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/CanvasesDeleteCanvasVersionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "CanvasVersion"
+        ]
+      },
       "put": {
         "summary": "Update canvas version",
         "description": "Updates a user-owned canvas version; if version_id is omitted, updates the live canvas when versioning is disabled",
@@ -1604,6 +1640,142 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CanvasesUpdateCanvasVersionBody"
+            }
+          }
+        ],
+        "tags": [
+          "CanvasVersion"
+        ]
+      },
+      "patch": {
+        "summary": "Update canvas version with a changeset",
+        "description": "Update canvas version with a changeset",
+        "operationId": "Canvases_ApplyCanvasVersionChangeset",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/CanvasesApplyCanvasVersionChangesetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CanvasesApplyCanvasVersionChangesetBody"
+            }
+          }
+        ],
+        "tags": [
+          "CanvasVersion"
+        ]
+      }
+    },
+    "/api/v1/canvases/{canvasId}/versions/{versionId}/publish": {
+      "patch": {
+        "summary": "Publish draft canvas version",
+        "description": "Publishes a user-owned draft canvas version directly to live",
+        "operationId": "Canvases_PublishCanvasVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/CanvasesPublishCanvasVersionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CanvasesPublishCanvasVersionBody"
+            }
+          }
+        ],
+        "tags": [
+          "CanvasVersion"
+        ]
+      }
+    },
+    "/api/v1/canvases/{canvasId}/versions/{versionId}/validate": {
+      "patch": {
+        "summary": "Validate a canvas version changeset",
+        "description": "Validate a canvas version changeset",
+        "operationId": "Canvases_ValidateCanvasVersionChangeset",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/CanvasesValidateCanvasVersionChangesetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CanvasesValidateCanvasVersionChangesetBody"
             }
           }
         ],
@@ -2233,7 +2405,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/SuperplaneMeUser"
+              "$ref": "#/definitions/MeMeResponse"
             }
           },
           "default": {
@@ -2243,6 +2415,14 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "includePermissions",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
         "tags": [
           "Me"
         ]
@@ -3911,108 +4091,10 @@
             "type": "string"
           },
           {
-            "name": "includeServiceAccounts",
+            "name": "includeRoles",
             "in": "query",
             "required": false,
             "type": "boolean"
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/v1/users/{userId}/permissions": {
-      "get": {
-        "summary": "List user permissions",
-        "description": "Returns all permissions a user has within a specific domain",
-        "operationId": "Users_ListUserPermissions",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/UsersListUserPermissionsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "domainType",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "enum": [
-              "DOMAIN_TYPE_UNSPECIFIED",
-              "DOMAIN_TYPE_ORGANIZATION"
-            ],
-            "default": "DOMAIN_TYPE_UNSPECIFIED"
-          },
-          {
-            "name": "domainId",
-            "in": "query",
-            "required": false,
-            "type": "string"
-          }
-        ],
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/v1/users/{userId}/roles": {
-      "get": {
-        "summary": "Get user roles",
-        "description": "Returns the roles a user has within a specific domain",
-        "operationId": "Users_ListUserRoles",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/UsersListUserRolesResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "domainType",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "enum": [
-              "DOMAIN_TYPE_UNSPECIFIED",
-              "DOMAIN_TYPE_ORGANIZATION"
-            ],
-            "default": "DOMAIN_TYPE_UNSPECIFIED"
-          },
-          {
-            "name": "domainId",
-            "in": "query",
-            "required": false,
-            "type": "string"
           }
         ],
         "tags": [
@@ -4250,14 +4332,14 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/ComponentsNode"
+            "$ref": "#/definitions/SuperplaneComponentsNode"
           }
         },
         "edges": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/ComponentsEdge"
+            "$ref": "#/definitions/SuperplaneComponentsEdge"
           }
         },
         "configuration": {
@@ -4357,6 +4439,65 @@
       ],
       "default": "SCOPE_UNSPECIFIED"
     },
+    "CanvasChangesetChange": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/CanvasChangesetChangeType"
+        },
+        "node": {
+          "$ref": "#/definitions/CanvasChangesetChangeNode",
+          "title": "Required for ADD_NODE, UPDATE_NODE, DELETE_NODE"
+        },
+        "edge": {
+          "$ref": "#/definitions/CanvasChangesetChangeEdge",
+          "title": "Required for ADD_EDGE and DELETE_EDGE"
+        }
+      }
+    },
+    "CanvasChangesetChangeEdge": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    },
+    "CanvasChangesetChangeNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "block": {
+          "type": "string"
+        },
+        "configuration": {
+          "type": "object"
+        }
+      }
+    },
+    "CanvasChangesetChangeType": {
+      "type": "string",
+      "enum": [
+        "UNSPECIFIED",
+        "ADD_NODE",
+        "DELETE_NODE",
+        "UPDATE_NODE",
+        "ADD_EDGE",
+        "DELETE_EDGE"
+      ],
+      "default": "UNSPECIFIED"
+    },
     "CanvasNodeExecutionResult": {
       "type": "string",
       "enum": [
@@ -4389,6 +4530,22 @@
       "properties": {
         "changeRequest": {
           "$ref": "#/definitions/CanvasesCanvasChangeRequest"
+        }
+      }
+    },
+    "CanvasesApplyCanvasVersionChangesetBody": {
+      "type": "object",
+      "properties": {
+        "changeset": {
+          "$ref": "#/definitions/CanvasesCanvasChangeset"
+        }
+      }
+    },
+    "CanvasesApplyCanvasVersionChangesetResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/CanvasesCanvasVersion"
         }
       }
     },
@@ -4589,6 +4746,19 @@
       ],
       "default": "STATUS_UNSPECIFIED"
     },
+    "CanvasesCanvasChangeset": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/CanvasChangesetChange"
+          }
+        }
+      },
+      "description": "CanvasChangeset describes a unit of change for a canvas version."
+    },
     "CanvasesCanvasEvent": {
       "type": "object",
       "properties": {
@@ -4613,6 +4783,9 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "root": {
+          "type": "boolean"
         }
       }
     },
@@ -4642,7 +4815,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/CanvasesCanvasNodeExecution"
+            "$ref": "#/definitions/CanvasesCanvasNodeExecutionRef"
           }
         },
         "customName": {
@@ -4729,9 +4902,6 @@
         "resultMessage": {
           "type": "string"
         },
-        "input": {
-          "type": "object"
-        },
         "outputs": {
           "type": "object"
         },
@@ -4762,7 +4932,40 @@
         "cancelledBy": {
           "$ref": "#/definitions/SuperplaneCanvasesUserRef"
         }
-      }
+      },
+      "description": "Full description of a canvas node execution.\nShould only be used for endpoints specific to executions."
+    },
+    "CanvasesCanvasNodeExecutionRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/CanvasesCanvasNodeExecutionState"
+        },
+        "result": {
+          "$ref": "#/definitions/CanvasNodeExecutionResult"
+        },
+        "resultReason": {
+          "$ref": "#/definitions/CanvasNodeExecutionResultReason"
+        },
+        "resultMessage": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "More succint description of a canvas node execution.\nNo input, outputs, root event, children.\nUsed to embed execution information into other messages."
     },
     "CanvasesCanvasNodeExecutionState": {
       "type": "string",
@@ -4805,14 +5008,14 @@
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/ComponentsNode"
+            "$ref": "#/definitions/SuperplaneComponentsNode"
           }
         },
         "edges": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/ComponentsEdge"
+            "$ref": "#/definitions/SuperplaneComponentsEdge"
           }
         }
       }
@@ -4825,13 +5028,6 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/CanvasesCanvasNodeExecution"
-          }
-        },
-        "nextQueueItems": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/CanvasesCanvasNodeQueueItem"
           }
         },
         "lastEvents": {
@@ -4866,8 +5062,8 @@
         "owner": {
           "$ref": "#/definitions/SuperplaneCanvasesUserRef"
         },
-        "isPublished": {
-          "type": "boolean"
+        "state": {
+          "$ref": "#/definitions/CanvasesCanvasVersionState"
         },
         "publishedAt": {
           "type": "string",
@@ -4882,6 +5078,16 @@
           "format": "date-time"
         }
       }
+    },
+    "CanvasesCanvasVersionState": {
+      "type": "string",
+      "enum": [
+        "STATE_UNSPECIFIED",
+        "STATE_DRAFT",
+        "STATE_PUBLISHED",
+        "STATE_SNAPSHOT"
+      ],
+      "default": "STATE_UNSPECIFIED"
     },
     "CanvasesCreateCanvasChangeRequestBody": {
       "type": "object",
@@ -4939,6 +5145,9 @@
       "type": "object"
     },
     "CanvasesDeleteCanvasResponse": {
+      "type": "object"
+    },
+    "CanvasesDeleteCanvasVersionResponse": {
       "type": "object"
     },
     "CanvasesDeleteNodeQueueItemResponse": {
@@ -5203,6 +5412,17 @@
         }
       }
     },
+    "CanvasesPublishCanvasVersionBody": {
+      "type": "object"
+    },
+    "CanvasesPublishCanvasVersionResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/CanvasesCanvasVersion"
+        }
+      }
+    },
     "CanvasesResolveCanvasChangeRequestBody": {
       "type": "object",
       "properties": {
@@ -5298,7 +5518,23 @@
       "type": "object",
       "properties": {
         "node": {
-          "$ref": "#/definitions/ComponentsNode"
+          "$ref": "#/definitions/SuperplaneComponentsNode"
+        }
+      }
+    },
+    "CanvasesValidateCanvasVersionChangesetBody": {
+      "type": "object",
+      "properties": {
+        "changeset": {
+          "$ref": "#/definitions/CanvasesCanvasChangeset"
+        }
+      }
+    },
+    "CanvasesValidateCanvasVersionChangesetResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "#/definitions/CanvasesCanvasVersion"
         }
       }
     },
@@ -5365,20 +5601,6 @@
         }
       }
     },
-    "ComponentsEdge": {
-      "type": "object",
-      "properties": {
-        "sourceId": {
-          "type": "string"
-        },
-        "targetId": {
-          "type": "string"
-        },
-        "channel": {
-          "type": "string"
-        }
-      }
-    },
     "ComponentsIntegrationRef": {
       "type": "object",
       "properties": {
@@ -5411,56 +5633,6 @@
             "type": "object",
             "$ref": "#/definitions/ComponentsComponent"
           }
-        }
-      }
-    },
-    "ComponentsNode": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/definitions/ComponentsNodeType"
-        },
-        "configuration": {
-          "type": "object"
-        },
-        "metadata": {
-          "type": "object"
-        },
-        "position": {
-          "$ref": "#/definitions/ComponentsPosition"
-        },
-        "component": {
-          "$ref": "#/definitions/NodeComponentRef"
-        },
-        "blueprint": {
-          "$ref": "#/definitions/NodeBlueprintRef"
-        },
-        "trigger": {
-          "$ref": "#/definitions/NodeTriggerRef"
-        },
-        "widget": {
-          "$ref": "#/definitions/NodeWidgetRef"
-        },
-        "isCollapsed": {
-          "type": "boolean"
-        },
-        "integration": {
-          "$ref": "#/definitions/ComponentsIntegrationRef"
-        },
-        "errorMessage": {
-          "type": "string"
-        },
-        "warningMessage": {
-          "type": "string"
-        },
-        "paused": {
-          "type": "boolean"
         }
       }
     },
@@ -6055,6 +6227,14 @@
         }
       }
     },
+    "MeMeResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/SuperplaneMeUser"
+        }
+      }
+    },
     "MeRegenerateTokenResponse": {
       "type": "object",
       "properties": {
@@ -6447,6 +6627,10 @@
         "maxIntegrations": {
           "type": "integer",
           "format": "int32"
+        },
+        "maxAgentTokensPerMonth": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -6495,6 +6679,22 @@
           "format": "date-time"
         },
         "nextEventBucketDecreaseAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "agentTokenBucketLevel": {
+          "type": "number",
+          "format": "double"
+        },
+        "agentTokenBucketCapacity": {
+          "type": "number",
+          "format": "double"
+        },
+        "agentTokenBucketLastUpdatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "nextAgentTokenBucketDecreaseAt": {
           "type": "string",
           "format": "date-time"
         }
@@ -7068,6 +7268,70 @@
         }
       }
     },
+    "SuperplaneComponentsEdge": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        }
+      }
+    },
+    "SuperplaneComponentsNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/ComponentsNodeType"
+        },
+        "configuration": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "position": {
+          "$ref": "#/definitions/ComponentsPosition"
+        },
+        "component": {
+          "$ref": "#/definitions/NodeComponentRef"
+        },
+        "blueprint": {
+          "$ref": "#/definitions/NodeBlueprintRef"
+        },
+        "trigger": {
+          "$ref": "#/definitions/NodeTriggerRef"
+        },
+        "widget": {
+          "$ref": "#/definitions/NodeWidgetRef"
+        },
+        "isCollapsed": {
+          "type": "boolean"
+        },
+        "integration": {
+          "$ref": "#/definitions/ComponentsIntegrationRef"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "warningMessage": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      }
+    },
     "SuperplaneComponentsOutputChannel": {
       "type": "object",
       "properties": {
@@ -7100,6 +7364,9 @@
         "id": {
           "type": "string"
         },
+        "name": {
+          "type": "string"
+        },
         "email": {
           "type": "string"
         },
@@ -7112,6 +7379,25 @@
         },
         "hasToken": {
           "type": "boolean"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/AuthorizationPermission"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -7219,48 +7505,6 @@
         }
       }
     },
-    "UsersListUserPermissionsResponse": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "domainType": {
-          "$ref": "#/definitions/AuthorizationDomainType"
-        },
-        "domainId": {
-          "type": "string"
-        },
-        "permissions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/AuthorizationPermission"
-          }
-        }
-      }
-    },
-    "UsersListUserRolesResponse": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string"
-        },
-        "domainType": {
-          "$ref": "#/definitions/AuthorizationDomainType"
-        },
-        "domainId": {
-          "type": "string"
-        },
-        "roles": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/RolesRole"
-          }
-        }
-      }
-    },
     "UsersListUsersResponse": {
       "type": "object",
       "properties": {
@@ -7273,26 +7517,7 @@
         }
       }
     },
-    "UsersUserMetadata": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "email": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      }
-    },
-    "UsersUserRoleAssignment": {
+    "UsersRoleAssignment": {
       "type": "object",
       "properties": {
         "roleName": {
@@ -7316,29 +7541,48 @@
         }
       }
     },
+    "UsersUserMetadata": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "UsersUserSpec": {
       "type": "object",
       "properties": {
         "displayName": {
           "type": "string"
-        },
-        "accountProviders": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/UsersAccountProvider"
-          }
         }
       }
     },
     "UsersUserStatus": {
       "type": "object",
       "properties": {
-        "roleAssignments": {
+        "accountProviders": {
           "type": "array",
           "items": {
             "type": "object",
-            "$ref": "#/definitions/UsersUserRoleAssignment"
+            "$ref": "#/definitions/UsersAccountProvider"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/UsersRoleAssignment"
           }
         }
       }

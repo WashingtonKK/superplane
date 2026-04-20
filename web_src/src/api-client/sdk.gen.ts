@@ -36,6 +36,9 @@ import type {
   CanvasesActOnCanvasChangeRequestData,
   CanvasesActOnCanvasChangeRequestErrors,
   CanvasesActOnCanvasChangeRequestResponses,
+  CanvasesApplyCanvasVersionChangesetData,
+  CanvasesApplyCanvasVersionChangesetErrors,
+  CanvasesApplyCanvasVersionChangesetResponses,
   CanvasesCancelExecutionData,
   CanvasesCancelExecutionErrors,
   CanvasesCancelExecutionResponses,
@@ -54,6 +57,9 @@ import type {
   CanvasesDeleteCanvasMemoryErrors,
   CanvasesDeleteCanvasMemoryResponses,
   CanvasesDeleteCanvasResponses,
+  CanvasesDeleteCanvasVersionData,
+  CanvasesDeleteCanvasVersionErrors,
+  CanvasesDeleteCanvasVersionResponses,
   CanvasesDeleteNodeQueueItemData,
   CanvasesDeleteNodeQueueItemErrors,
   CanvasesDeleteNodeQueueItemResponses,
@@ -105,6 +111,9 @@ import type {
   CanvasesListNodeQueueItemsData,
   CanvasesListNodeQueueItemsErrors,
   CanvasesListNodeQueueItemsResponses,
+  CanvasesPublishCanvasVersionData,
+  CanvasesPublishCanvasVersionErrors,
+  CanvasesPublishCanvasVersionResponses,
   CanvasesResolveCanvasChangeRequestData,
   CanvasesResolveCanvasChangeRequestErrors,
   CanvasesResolveCanvasChangeRequestResponses,
@@ -123,6 +132,9 @@ import type {
   CanvasesUpdateNodePauseData,
   CanvasesUpdateNodePauseErrors,
   CanvasesUpdateNodePauseResponses,
+  CanvasesValidateCanvasVersionChangesetData,
+  CanvasesValidateCanvasVersionChangesetErrors,
+  CanvasesValidateCanvasVersionChangesetResponses,
   ComponentsDescribeComponentData,
   ComponentsDescribeComponentErrors,
   ComponentsDescribeComponentResponses,
@@ -297,12 +309,6 @@ import type {
   TriggersListTriggersData,
   TriggersListTriggersErrors,
   TriggersListTriggersResponses,
-  UsersListUserPermissionsData,
-  UsersListUserPermissionsErrors,
-  UsersListUserPermissionsResponses,
-  UsersListUserRolesData,
-  UsersListUserRolesErrors,
-  UsersListUserRolesResponses,
   UsersListUsersData,
   UsersListUsersErrors,
   UsersListUsersResponses,
@@ -892,6 +898,20 @@ export const canvasesUpdateCanvasVersion2 = <ThrowOnError extends boolean = true
   });
 
 /**
+ * Discard draft canvas version
+ *
+ * Discards a user-owned draft canvas version
+ */
+export const canvasesDeleteCanvasVersion = <ThrowOnError extends boolean = true>(
+  options: Options<CanvasesDeleteCanvasVersionData, ThrowOnError>,
+) =>
+  (options.client ?? client).delete<
+    CanvasesDeleteCanvasVersionResponses,
+    CanvasesDeleteCanvasVersionErrors,
+    ThrowOnError
+  >({ url: "/api/v1/canvases/{canvasId}/versions/{versionId}", ...options });
+
+/**
  * Describe canvas version
  *
  * Returns one canvas version by ID
@@ -904,6 +924,27 @@ export const canvasesDescribeCanvasVersion = <ThrowOnError extends boolean = tru
     CanvasesDescribeCanvasVersionErrors,
     ThrowOnError
   >({ url: "/api/v1/canvases/{canvasId}/versions/{versionId}", ...options });
+
+/**
+ * Update canvas version with a changeset
+ *
+ * Update canvas version with a changeset
+ */
+export const canvasesApplyCanvasVersionChangeset = <ThrowOnError extends boolean = true>(
+  options: Options<CanvasesApplyCanvasVersionChangesetData, ThrowOnError>,
+) =>
+  (options.client ?? client).patch<
+    CanvasesApplyCanvasVersionChangesetResponses,
+    CanvasesApplyCanvasVersionChangesetErrors,
+    ThrowOnError
+  >({
+    url: "/api/v1/canvases/{canvasId}/versions/{versionId}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
 
 /**
  * Update canvas version
@@ -923,6 +964,48 @@ export const canvasesUpdateCanvasVersion = <ThrowOnError extends boolean = true>
       },
     },
   );
+
+/**
+ * Publish draft canvas version
+ *
+ * Publishes a user-owned draft canvas version directly to live
+ */
+export const canvasesPublishCanvasVersion = <ThrowOnError extends boolean = true>(
+  options: Options<CanvasesPublishCanvasVersionData, ThrowOnError>,
+) =>
+  (options.client ?? client).patch<
+    CanvasesPublishCanvasVersionResponses,
+    CanvasesPublishCanvasVersionErrors,
+    ThrowOnError
+  >({
+    url: "/api/v1/canvases/{canvasId}/versions/{versionId}/publish",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Validate a canvas version changeset
+ *
+ * Validate a canvas version changeset
+ */
+export const canvasesValidateCanvasVersionChangeset = <ThrowOnError extends boolean = true>(
+  options: Options<CanvasesValidateCanvasVersionChangesetData, ThrowOnError>,
+) =>
+  (options.client ?? client).patch<
+    CanvasesValidateCanvasVersionChangesetResponses,
+    CanvasesValidateCanvasVersionChangesetErrors,
+    ThrowOnError
+  >({
+    url: "/api/v1/canvases/{canvasId}/versions/{versionId}/validate",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
 
 /**
  * Delete canvas
@@ -1866,32 +1949,6 @@ export const usersListUsers = <ThrowOnError extends boolean = true>(
 ) =>
   (options?.client ?? client).get<UsersListUsersResponses, UsersListUsersErrors, ThrowOnError>({
     url: "/api/v1/users",
-    ...options,
-  });
-
-/**
- * List user permissions
- *
- * Returns all permissions a user has within a specific domain
- */
-export const usersListUserPermissions = <ThrowOnError extends boolean = true>(
-  options: Options<UsersListUserPermissionsData, ThrowOnError>,
-) =>
-  (options.client ?? client).get<UsersListUserPermissionsResponses, UsersListUserPermissionsErrors, ThrowOnError>({
-    url: "/api/v1/users/{userId}/permissions",
-    ...options,
-  });
-
-/**
- * Get user roles
- *
- * Returns the roles a user has within a specific domain
- */
-export const usersListUserRoles = <ThrowOnError extends boolean = true>(
-  options: Options<UsersListUserRolesData, ThrowOnError>,
-) =>
-  (options.client ?? client).get<UsersListUserRolesResponses, UsersListUserRolesErrors, ThrowOnError>({
-    url: "/api/v1/users/{userId}/roles",
     ...options,
   });
 

@@ -1,20 +1,67 @@
-import { ComponentBaseMapper, CustomFieldRenderer, TriggerRenderer, EventStateRegistry } from "../types";
+import type { ComponentBaseMapper, CustomFieldRenderer, EventStateRegistry, TriggerRenderer } from "../types";
 import { buildActionStateRegistry } from "../utils";
-import { onAlertFiringCustomFieldRenderer, onAlertFiringTriggerRenderer } from "./on_alert_firing";
+import { createAlertRuleMapper } from "./create_alert_rule";
+import { createAnnotationMapper } from "./create_annotation";
+import { createHttpSyntheticCheckMapper } from "./create_http_synthetic_check";
+import { createSilenceMapper } from "./create_silence";
+import { deleteAlertRuleMapper } from "./delete_alert_rule";
+import { deleteAnnotationMapper } from "./delete_annotation";
+import { deleteHttpSyntheticCheckMapper } from "./delete_http_synthetic_check";
+import { deleteSilenceMapper } from "./delete_silence";
+import { getAlertRuleMapper } from "./get_alert_rule";
+import { getSilenceMapper } from "./get_silence";
+import { getSilenceEventStateRegistry } from "./get_silence_state";
+import { getHttpSyntheticCheckMapper, GET_HTTP_SYNTHETIC_CHECK_STATE_REGISTRY } from "./get_http_synthetic_check";
+import { listAlertRulesMapper } from "./list_alert_rules";
+import { listAnnotationsMapper } from "./list_annotations";
+import { listSilencesMapper } from "./list_silences";
+import { onAlertFiringTriggerRenderer } from "./on_alert_firing";
 import { queryDataSourceMapper } from "./query_data_source";
+import { updateHttpSyntheticCheckMapper } from "./update_http_synthetic_check";
+import { updateAlertRuleMapper } from "./update_alert_rule";
 
 export const componentMappers: Record<string, ComponentBaseMapper> = {
+  createAlertRule: createAlertRuleMapper,
+  createHttpSyntheticCheck: createHttpSyntheticCheckMapper,
+  deleteAlertRule: deleteAlertRuleMapper,
+  getAlertRule: getAlertRuleMapper,
+  getHttpSyntheticCheck: getHttpSyntheticCheckMapper,
+  listAlertRules: listAlertRulesMapper,
   queryDataSource: queryDataSourceMapper,
+  updateAlertRule: updateAlertRuleMapper,
+  updateHttpSyntheticCheck: updateHttpSyntheticCheckMapper,
+  createAnnotation: createAnnotationMapper,
+  listAnnotations: listAnnotationsMapper,
+  deleteAnnotation: deleteAnnotationMapper,
+  createSilence: createSilenceMapper,
+  deleteSilence: deleteSilenceMapper,
+  deleteHttpSyntheticCheck: deleteHttpSyntheticCheckMapper,
+  getSilence: getSilenceMapper,
+  listSilences: listSilencesMapper,
 };
 
 export const triggerRenderers: Record<string, TriggerRenderer> = {
   onAlertFiring: onAlertFiringTriggerRenderer,
 };
 
-export const customFieldRenderers: Record<string, CustomFieldRenderer> = {
-  onAlertFiring: onAlertFiringCustomFieldRenderer,
-};
+export const customFieldRenderers: Record<string, CustomFieldRenderer> = {};
 
 export const eventStateRegistry: Record<string, EventStateRegistry> = {
+  createAlertRule: buildActionStateRegistry("created"),
+  createHttpSyntheticCheck: buildActionStateRegistry("created"),
+  deleteAlertRule: buildActionStateRegistry("deleted"),
+  deleteHttpSyntheticCheck: buildActionStateRegistry("deleted"),
+  getAlertRule: buildActionStateRegistry("fetched"),
+  getHttpSyntheticCheck: GET_HTTP_SYNTHETIC_CHECK_STATE_REGISTRY,
+  listAlertRules: buildActionStateRegistry("listed"),
   queryDataSource: buildActionStateRegistry("queried"),
+  updateAlertRule: buildActionStateRegistry("updated"),
+  updateHttpSyntheticCheck: buildActionStateRegistry("updated"),
+  createAnnotation: buildActionStateRegistry("created"),
+  listAnnotations: buildActionStateRegistry("listed"),
+  deleteAnnotation: buildActionStateRegistry("deleted"),
+  createSilence: buildActionStateRegistry("created"),
+  deleteSilence: buildActionStateRegistry("deleted"),
+  getSilence: getSilenceEventStateRegistry,
+  listSilences: buildActionStateRegistry("listed"),
 };

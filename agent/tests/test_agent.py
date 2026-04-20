@@ -4,26 +4,9 @@ from ai.agent import (
     _get_cached_catalog_list,
     _put_cached_catalog_list,
     build_agent,
-    build_prompt,
-    load_system_prompt,
 )
 from ai.jsonutil import to_jsonable
-from ai.models import CanvasAnswer, CanvasProposal, CanvasQuestionRequest
-
-
-def test_load_system_prompt_covers_expr_datetime_semantics() -> None:
-    text = load_system_prompt()
-    assert "expr-lang" in text
-    assert "now()" in text
-    assert "duration(" in text
-    assert "three-argument" in text
-    assert "date(str, format, timezone)" in text
-    assert "root().data" in text
-
-
-def test_build_prompt_contains_question() -> None:
-    prompt = build_prompt(CanvasQuestionRequest(question="What triggers this flow?"))
-    assert "triggers" in prompt
+from ai.models import CanvasAnswer, CanvasProposal
 
 
 def test_build_agent_returns_agent_instance() -> None:
@@ -38,13 +21,13 @@ def test_canvas_answer_serializes_proposal_with_aliases() -> None:
         proposal=CanvasProposal(
             summary="Add a webhook trigger and connect to Slack.",
             operations=[
-                {
+                {  # type: ignore[list-item]
                     "type": "add_node",
                     "blockName": "webhook.inbound",
                     "nodeKey": "trigger_1",
                     "nodeName": "Inbound Webhook",
                 },
-                {
+                {  # type: ignore[list-item]
                     "type": "add_node",
                     "blockName": "slack.send_message",
                     "nodeKey": "slack_1",

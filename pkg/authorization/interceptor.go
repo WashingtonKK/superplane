@@ -102,9 +102,7 @@ func NewAuthorizationInterceptor(authService Authorization) *AuthorizationInterc
 		pbGroups.Groups_DeleteGroup_FullMethodName:         {Resource: "groups", Action: "delete", DomainType: models.DomainTypeOrganization},
 
 		// Users rules
-		pbUsers.Users_ListUserPermissions_FullMethodName: {Resource: "members", Action: "read", DomainType: models.DomainTypeOrganization},
-		pbUsers.Users_ListUserRoles_FullMethodName:       {Resource: "members", Action: "read", DomainType: models.DomainTypeOrganization},
-		pbUsers.Users_ListUsers_FullMethodName:           {Resource: "members", Action: "read", DomainType: models.DomainTypeOrganization},
+		pbUsers.Users_ListUsers_FullMethodName: {Resource: "members", Action: "read", DomainType: models.DomainTypeOrganization},
 
 		// Roles rules
 		pbRoles.Roles_AssignRole_FullMethodName:   {Resource: "members", Action: "update", DomainType: models.DomainTypeOrganization},
@@ -192,6 +190,30 @@ func NewAuthorizationInterceptor(authService Authorization) *AuthorizationInterc
 			ResourceResolver: canvasResourceResolver,
 		},
 		pbCanvases.Canvases_UpdateCanvasVersion_FullMethodName: {
+			Resource:         "canvases",
+			Action:           "update",
+			DomainType:       models.DomainTypeOrganization,
+			ResourceResolver: canvasResourceResolver,
+		},
+		pbCanvases.Canvases_ApplyCanvasVersionChangeset_FullMethodName: {
+			Resource:         "canvases",
+			Action:           "update",
+			DomainType:       models.DomainTypeOrganization,
+			ResourceResolver: canvasResourceResolver,
+		},
+		pbCanvases.Canvases_ValidateCanvasVersionChangeset_FullMethodName: {
+			Resource:         "canvases",
+			Action:           "read",
+			DomainType:       models.DomainTypeOrganization,
+			ResourceResolver: canvasResourceResolver,
+		},
+		pbCanvases.Canvases_DeleteCanvasVersion_FullMethodName: {
+			Resource:         "canvases",
+			Action:           "update",
+			DomainType:       models.DomainTypeOrganization,
+			ResourceResolver: canvasResourceResolver,
+		},
+		pbCanvases.Canvases_PublishCanvasVersion_FullMethodName: {
 			Resource:         "canvases",
 			Action:           "update",
 			DomainType:       models.DomainTypeOrganization,

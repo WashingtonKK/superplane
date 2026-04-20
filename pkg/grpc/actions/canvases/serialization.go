@@ -9,6 +9,7 @@ import (
 	"github.com/superplanehq/superplane/pkg/core"
 	"github.com/superplanehq/superplane/pkg/database"
 	"github.com/superplanehq/superplane/pkg/grpc/actions"
+	"github.com/superplanehq/superplane/pkg/grpc/actions/canvases/changesets"
 	"github.com/superplanehq/superplane/pkg/models"
 	pb "github.com/superplanehq/superplane/pkg/protos/canvases"
 	compb "github.com/superplanehq/superplane/pkg/protos/components"
@@ -18,7 +19,50 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func SerializeCanvas(canvas *models.Canvas, includeStatus bool) (*pb.Canvas, error) {
+func SerializeCanvases(canvases []models.Canvas) ([]*pb.Canvas, error) {
+	//
+	// Get all users with a single query, to avoid N+1 queries.
+	//
+	userIDs := []uuid.UUID{}
+	for _, canvas := range canvases {
+		if canvas.CreatedBy != nil {
+			userIDs = append(userIDs, *canvas.CreatedBy)
+		}
+	}
+
+	users, err := models.FindMaybeDeletedUsersByIDs(userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	usersByID := make(map[string]models.User, len(users))
+	for _, user := range users {
+		usersByID[user.ID.String()] = user
+	}
+
+	//
+	// Serialize all canvases now
+	//
+	protoCanvases := make([]*pb.Canvas, len(canvases))
+	for i, canvas := range canvases {
+		var user *models.User
+		if canvas.CreatedBy != nil {
+			u, _ := usersByID[canvas.CreatedBy.String()]
+			user = &u
+		}
+
+		protoCanvas, err := SerializeCanvas(&canvas, false, user)
+		if err != nil {
+			return nil, err
+		}
+
+		protoCanvases[i] = protoCanvas
+	}
+
+	return protoCanvases, nil
+}
+
+func SerializeCanvas(canvas *models.Canvas, includeStatus bool, user *models.User) (*pb.Canvas, error) {
 	liveVersion, err := models.FindLiveCanvasVersionByCanvasInTransaction(database.Conn(), canvas)
 	if err != nil {
 		return nil, err
@@ -35,13 +79,8 @@ func SerializeCanvas(canvas *models.Canvas, includeStatus bool) (*pb.Canvas, err
 	}
 
 	var createdBy *pb.UserRef
-	if canvas.CreatedBy != nil {
-		idStr := canvas.CreatedBy.String()
-		name := ""
-		if user, err := models.FindMaybeDeletedUserByID(canvas.OrganizationID.String(), idStr); err == nil && user != nil {
-			name = user.Name
-		}
-		createdBy = &pb.UserRef{Id: idStr, Name: name}
+	if user != nil {
+		createdBy = &pb.UserRef{Id: user.ID.String(), Name: user.Name}
 	}
 
 	if !includeStatus {
@@ -89,17 +128,6 @@ func SerializeCanvas(canvas *models.Canvas, includeStatus bool) (*pb.Canvas, err
 		return nil, err
 	}
 
-	// Fetch next queue items per node
-	nextQueueItems, err := models.FindNextQueueItemPerNode(canvas.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	serializedQueueItems, err := SerializeNodeQueueItems(nextQueueItems)
-	if err != nil {
-		return nil, err
-	}
-
 	// Fetch last events per node
 	lastEvents, err := models.FindLastEventPerNode(canvas.ID)
 	if err != nil {
@@ -132,7 +160,6 @@ func SerializeCanvas(canvas *models.Canvas, includeStatus bool) (*pb.Canvas, err
 		},
 		Status: &pb.Canvas_Status{
 			LastExecutions: serializedExecutions,
-			NextQueueItems: serializedQueueItems,
 			LastEvents:     serializedEvents,
 		},
 	}, nil
@@ -303,12 +330,9 @@ func ParseCanvas(registry *registry.Registry, orgID string, canvas *pb.Canvas) (
 		}
 	}
 
-	if err := actions.CheckForCycles(canvas.Spec.Nodes, canvas.Spec.Edges); err != nil {
-		return nil, nil, err
-	}
-
 	// Convert proto nodes to models, adding validation errors and warnings where applicable
 	nodes := actions.ProtoToNodes(canvas.Spec.Nodes)
+	edges := actions.ProtoToEdges(canvas.Spec.Edges)
 	for i := range nodes {
 		if errorMsg, hasError := nodeValidationErrors[nodes[i].ID]; hasError {
 			nodes[i].ErrorMessage = &errorMsg
@@ -323,7 +347,14 @@ func ParseCanvas(registry *registry.Registry, orgID string, canvas *pb.Canvas) (
 		}
 	}
 
-	return nodes, actions.ProtoToEdges(canvas.Spec.Edges), nil
+	//
+	// Check for cycles in the canvas
+	//
+	if err := changesets.CheckForCycles(nodes, edges); err != nil {
+		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	return nodes, edges, nil
 }
 
 func validateNodeRef(registry *registry.Registry, organizationID string, node *compb.Node) error {

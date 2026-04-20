@@ -14,9 +14,10 @@ from ai.session_store import SessionStore
 
 
 class PersistedRunRecorder:
-    def __init__(self, store: SessionStore, chat_id: str, user_prompt: str) -> None:
+    def __init__(self, store: SessionStore, chat_id: str, run_id: str, user_prompt: str) -> None:
         self._store = store
         self._chat_id = chat_id
+        self._run_id = run_id
         self._history_count_before_run = self._store.count_chat_model_messages(chat_id)
         self._authoritative_messages_saved = False
         self._current_response_message_id: str | None = None
@@ -25,6 +26,7 @@ class PersistedRunRecorder:
         self._store.create_agent_chat_model_message(
             chat_id,
             ModelRequest(parts=[UserPromptPart(user_prompt)]),
+            run_id=run_id,
         )
 
     @property
@@ -36,11 +38,15 @@ class PersistedRunRecorder:
             return
 
         if self._current_response_message_id is None:
-            record = self._store.create_agent_chat_model_message(self._chat_id, self._current_response)
+            record = self._store.create_agent_chat_model_message(
+                self._chat_id, self._current_response, run_id=self._run_id
+            )
             self._current_response_message_id = record.id
             return
 
-        self._store.update_agent_chat_model_message(self._current_response_message_id, self._current_response)
+        self._store.update_agent_chat_model_message(
+            self._current_response_message_id, self._current_response
+        )
 
     def save_authoritative_messages(self, messages: Any) -> None:
         validated_messages = ModelMessagesTypeAdapter.validate_python(messages)
@@ -48,6 +54,7 @@ class PersistedRunRecorder:
             self._chat_id,
             self._history_count_before_run,
             list(validated_messages),
+            run_id=self._run_id,
         )
         self._authoritative_messages_saved = True
         self._current_response_message_id = None
@@ -63,13 +70,18 @@ class PersistedRunRecorder:
             return
 
         text_part_index = next(
-            (index for index, part in enumerate(self._current_response.parts) if isinstance(part, TextPart)),
+            (
+                index
+                for index, part in enumerate(self._current_response.parts)
+                if isinstance(part, TextPart)
+            ),
             None,
         )
         if text_part_index is None:
             self._current_response.parts = [*self._current_response.parts, TextPart(chunk)]
         else:
             text_part = self._current_response.parts[text_part_index]
+            assert isinstance(text_part, TextPart)
             self._current_response.parts = [
                 *self._current_response.parts[:text_part_index],
                 TextPart(f"{text_part.content}{chunk}"),
@@ -91,13 +103,16 @@ class PersistedRunRecorder:
         updated_parts = [
             existing_part
             for existing_part in self._current_response.parts
-            if not isinstance(existing_part, ToolCallPart) or existing_part.tool_call_id != part.tool_call_id
+            if not isinstance(existing_part, ToolCallPart)
+            or existing_part.tool_call_id != part.tool_call_id
         ]
         updated_parts.append(part)
         self._current_response.parts = updated_parts
         self._persist_current_response()
 
-    def tool_call_delta(self, tool_call_id: str, args_delta: str | dict[str, Any] | None, tool_name: str | None) -> None:
+    def tool_call_delta(
+        self, tool_call_id: str, args_delta: str | dict[str, Any] | None, tool_name: str | None
+    ) -> None:
         if self._current_response is None:
             self._current_response = ModelResponse(parts=[])
 
@@ -145,6 +160,7 @@ class PersistedRunRecorder:
         self._store.create_agent_chat_model_message(
             self._chat_id,
             ModelRequest(parts=parts),
+            run_id=self._run_id,
         )
         self._current_response_message_id = None
         self._current_response = None

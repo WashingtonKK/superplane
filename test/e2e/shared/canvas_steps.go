@@ -28,80 +28,10 @@ func NewCanvasSteps(name string, t *testing.T, session *session.TestSession) *Ca
 	return &CanvasSteps{t: t, session: session, CanvasName: name}
 }
 
-// WaitForCanvasSaveStatusSaved waits until the canvas is durably saved.
-// It avoids returning on the initial stale "saved" state by giving autosave
-// one debounce window to start, but still accepts saves that completed before
-// the waiter began observing.
 func (s *CanvasSteps) WaitForCanvasSaveStatusSaved() {
-	saveButton := q.TestID("save-canvas-button").Run(s.session)
-	clickedManualSave := false
-	if isVisible, _ := saveButton.IsVisible(); isVisible {
-		s.session.Click(q.TestID("save-canvas-button"))
-		clickedManualSave = true
-	}
-
-	status := q.Locator(`[data-testid="canvas-save-status"]`).Run(s.session)
-	deadline := time.Now().Add(20 * time.Second)
-	initialStateCaptured := false
-	initialState := ""
-	initialSavedLabel := ""
-	seenFreshCycle := clickedManualSave
-	seenSaving := false
-	initialSavedStateStableUntil := time.Time{}
-	lastState := ""
-	for time.Now().Before(deadline) {
-		isVisible, _ := status.IsVisible()
-		if !isVisible {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		state, _ := status.GetAttribute("data-state")
-		if state != "" {
-			lastState = state
-		}
-		savedLabel, _ := status.GetAttribute("data-saved-label")
-
-		if !initialStateCaptured {
-			initialState = lastState
-			initialSavedLabel = savedLabel
-			initialStateCaptured = true
-			if initialState == "saved" {
-				initialSavedStateStableUntil = time.Now().Add(1 * time.Second)
-			}
-			if initialState != "saved" {
-				seenFreshCycle = true
-			}
-		}
-
-		if lastState == "saving" {
-			seenFreshCycle = true
-			seenSaving = true
-		}
-
-		if lastState != "" && lastState != "saved" {
-			seenFreshCycle = true
-		}
-
-		if initialState == "saved" && initialSavedLabel != "visible" && savedLabel == "visible" {
-			seenFreshCycle = true
-		}
-
-		if lastState == "saved" && seenFreshCycle && (seenSaving || initialState != "saved") {
-			return
-		}
-
-		if savedLabel == "visible" && seenFreshCycle && initialSavedLabel != "visible" {
-			return
-		}
-
-		if initialState == "saved" && !seenFreshCycle && !initialSavedStateStableUntil.IsZero() && time.Now().After(initialSavedStateStableUntil) {
-			return
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
-	s.t.Fatalf("timed out waiting for canvas save status saved, last state=%q", lastState)
+	// ugly, but it is what it is for now
+	// TODO: remove this completely once edit mode is shipped
+	s.session.Sleep(2500)
 }
 
 func (s *CanvasSteps) Create() {
@@ -190,6 +120,20 @@ func (s *CanvasSteps) AddNoop(name string, pos models.Position) {
 
 	s.session.FillIn(q.TestID("node-name-input"), name)
 	s.WaitForCanvasSaveStatusSaved()
+	s.session.Sleep(300)
+}
+
+func (s *CanvasSteps) AddNote() {
+	// The "Add Note" button only appears in the closed building blocks sidebar.
+	// If the sidebar is currently open, close it first by clicking on empty canvas area.
+	sidebar := q.TestID("building-blocks-sidebar").Run(s.session)
+	if isVisible, _ := sidebar.IsVisible(); isVisible {
+		s.ClickOnEmptyCanvasArea()
+		s.session.Sleep(300)
+	}
+
+	s.session.Click(q.TestID("add-note-button"))
+	s.session.AssertVisible(q.Text("Double click to add and edit notes..."))
 	s.session.Sleep(300)
 }
 

@@ -78,8 +78,8 @@ export type BlueprintsBlueprint = {
   description?: string;
   createdAt?: string;
   updatedAt?: string;
-  nodes?: Array<ComponentsNode>;
-  edges?: Array<ComponentsEdge>;
+  nodes?: Array<SuperplaneComponentsNode>;
+  edges?: Array<SuperplaneComponentsEdge>;
   configuration?: Array<ConfigurationField>;
   outputChannels?: Array<SuperplaneBlueprintsOutputChannel>;
   icon?: string;
@@ -119,6 +119,35 @@ export type CanvasAutoLayoutAlgorithm = "ALGORITHM_UNSPECIFIED" | "ALGORITHM_HOR
 
 export type CanvasAutoLayoutScope = "SCOPE_UNSPECIFIED" | "SCOPE_FULL_CANVAS" | "SCOPE_CONNECTED_COMPONENT";
 
+export type CanvasChangesetChange = {
+  type?: CanvasChangesetChangeType;
+  node?: CanvasChangesetChangeNode;
+  edge?: CanvasChangesetChangeEdge;
+};
+
+export type CanvasChangesetChangeEdge = {
+  sourceId?: string;
+  targetId?: string;
+  channel?: string;
+};
+
+export type CanvasChangesetChangeNode = {
+  id?: string;
+  name?: string;
+  block?: string;
+  configuration?: {
+    [key: string]: unknown;
+  };
+};
+
+export type CanvasChangesetChangeType =
+  | "UNSPECIFIED"
+  | "ADD_NODE"
+  | "DELETE_NODE"
+  | "UPDATE_NODE"
+  | "ADD_EDGE"
+  | "DELETE_EDGE";
+
 export type CanvasNodeExecutionResult = "RESULT_UNKNOWN" | "RESULT_PASSED" | "RESULT_FAILED" | "RESULT_CANCELLED";
 
 export type CanvasNodeExecutionResultReason =
@@ -132,6 +161,14 @@ export type CanvasesActOnCanvasChangeRequestBody = {
 
 export type CanvasesActOnCanvasChangeRequestResponse = {
   changeRequest?: CanvasesCanvasChangeRequest;
+};
+
+export type CanvasesApplyCanvasVersionChangesetBody = {
+  changeset?: CanvasesCanvasChangeset;
+};
+
+export type CanvasesApplyCanvasVersionChangesetResponse = {
+  version?: CanvasesCanvasVersion;
 };
 
 export type CanvasesCancelExecutionBody = {
@@ -213,6 +250,13 @@ export type CanvasesCanvasChangeRequestStatus =
   | "STATUS_PUBLISHED"
   | "STATUS_REJECTED";
 
+/**
+ * CanvasChangeset describes a unit of change for a canvas version.
+ */
+export type CanvasesCanvasChangeset = {
+  changes?: Array<CanvasChangesetChange>;
+};
+
 export type CanvasesCanvasEvent = {
   id?: string;
   canvasId?: string;
@@ -223,6 +267,7 @@ export type CanvasesCanvasEvent = {
     [key: string]: unknown;
   };
   createdAt?: string;
+  root?: boolean;
 };
 
 export type CanvasesCanvasEventWithExecutions = {
@@ -234,7 +279,7 @@ export type CanvasesCanvasEventWithExecutions = {
     [key: string]: unknown;
   };
   createdAt?: string;
-  executions?: Array<CanvasesCanvasNodeExecution>;
+  executions?: Array<CanvasesCanvasNodeExecutionRef>;
   customName?: string;
 };
 
@@ -257,6 +302,10 @@ export type CanvasesCanvasMetadata = {
   changeRequestApprovalConfig?: CanvasesCanvasChangeRequestApprovalConfig;
 };
 
+/**
+ * Full description of a canvas node execution.
+ * Should only be used for endpoints specific to executions.
+ */
 export type CanvasesCanvasNodeExecution = {
   id?: string;
   canvasId?: string;
@@ -267,9 +316,6 @@ export type CanvasesCanvasNodeExecution = {
   result?: CanvasNodeExecutionResult;
   resultReason?: CanvasNodeExecutionResultReason;
   resultMessage?: string;
-  input?: {
-    [key: string]: unknown;
-  };
   outputs?: {
     [key: string]: unknown;
   };
@@ -286,6 +332,22 @@ export type CanvasesCanvasNodeExecution = {
   cancelledBy?: SuperplaneCanvasesUserRef;
 };
 
+/**
+ * More succint description of a canvas node execution.
+ * No input, outputs, root event, children.
+ * Used to embed execution information into other messages.
+ */
+export type CanvasesCanvasNodeExecutionRef = {
+  id?: string;
+  nodeId?: string;
+  state?: CanvasesCanvasNodeExecutionState;
+  result?: CanvasNodeExecutionResult;
+  resultReason?: CanvasNodeExecutionResultReason;
+  resultMessage?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type CanvasesCanvasNodeExecutionState = "STATE_UNKNOWN" | "STATE_PENDING" | "STATE_STARTED" | "STATE_FINISHED";
 
 export type CanvasesCanvasNodeQueueItem = {
@@ -300,13 +362,12 @@ export type CanvasesCanvasNodeQueueItem = {
 };
 
 export type CanvasesCanvasSpec = {
-  nodes?: Array<ComponentsNode>;
-  edges?: Array<ComponentsEdge>;
+  nodes?: Array<SuperplaneComponentsNode>;
+  edges?: Array<SuperplaneComponentsEdge>;
 };
 
 export type CanvasesCanvasStatus = {
   lastExecutions?: Array<CanvasesCanvasNodeExecution>;
-  nextQueueItems?: Array<CanvasesCanvasNodeQueueItem>;
   lastEvents?: Array<CanvasesCanvasEvent>;
 };
 
@@ -319,11 +380,13 @@ export type CanvasesCanvasVersionMetadata = {
   id?: string;
   canvasId?: string;
   owner?: SuperplaneCanvasesUserRef;
-  isPublished?: boolean;
+  state?: CanvasesCanvasVersionState;
   publishedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
+
+export type CanvasesCanvasVersionState = "STATE_UNSPECIFIED" | "STATE_DRAFT" | "STATE_PUBLISHED" | "STATE_SNAPSHOT";
 
 export type CanvasesCreateCanvasChangeRequestBody = {
   versionId?: string;
@@ -357,6 +420,10 @@ export type CanvasesDeleteCanvasMemoryResponse = {
 };
 
 export type CanvasesDeleteCanvasResponse = {
+  [key: string]: unknown;
+};
+
+export type CanvasesDeleteCanvasVersionResponse = {
   [key: string]: unknown;
 };
 
@@ -471,6 +538,14 @@ export type CanvasesListNodeQueueItemsResponse = {
   lastTimestamp?: string;
 };
 
+export type CanvasesPublishCanvasVersionBody = {
+  [key: string]: unknown;
+};
+
+export type CanvasesPublishCanvasVersionResponse = {
+  version?: CanvasesCanvasVersion;
+};
+
 export type CanvasesResolveCanvasChangeRequestBody = {
   canvas?: CanvasesCanvas;
   autoLayout?: CanvasesCanvasAutoLayout;
@@ -515,7 +590,15 @@ export type CanvasesUpdateNodePauseBody = {
 };
 
 export type CanvasesUpdateNodePauseResponse = {
-  node?: ComponentsNode;
+  node?: SuperplaneComponentsNode;
+};
+
+export type CanvasesValidateCanvasVersionChangesetBody = {
+  changeset?: CanvasesCanvasChangeset;
+};
+
+export type CanvasesValidateCanvasVersionChangesetResponse = {
+  version?: CanvasesCanvasVersion;
 };
 
 export type ComponentsComponent = {
@@ -541,12 +624,6 @@ export type ComponentsDescribeComponentResponse = {
   component?: ComponentsComponent;
 };
 
-export type ComponentsEdge = {
-  sourceId?: string;
-  targetId?: string;
-  channel?: string;
-};
-
 export type ComponentsIntegrationRef = {
   id?: string;
   name?: string;
@@ -558,28 +635,6 @@ export type ComponentsListComponentActionsResponse = {
 
 export type ComponentsListComponentsResponse = {
   components?: Array<ComponentsComponent>;
-};
-
-export type ComponentsNode = {
-  id?: string;
-  name?: string;
-  type?: ComponentsNodeType;
-  configuration?: {
-    [key: string]: unknown;
-  };
-  metadata?: {
-    [key: string]: unknown;
-  };
-  position?: ComponentsPosition;
-  component?: NodeComponentRef;
-  blueprint?: NodeBlueprintRef;
-  trigger?: NodeTriggerRef;
-  widget?: NodeWidgetRef;
-  isCollapsed?: boolean;
-  integration?: ComponentsIntegrationRef;
-  errorMessage?: string;
-  warningMessage?: string;
-  paused?: boolean;
 };
 
 export type ComponentsNodeType = "TYPE_COMPONENT" | "TYPE_BLUEPRINT" | "TYPE_TRIGGER" | "TYPE_WIDGET";
@@ -812,6 +867,10 @@ export type IntegrationsIntegrationDefinition = {
   instructions?: string;
 };
 
+export type MeMeResponse = {
+  user?: SuperplaneMeUser;
+};
+
 export type MeRegenerateTokenResponse = {
   token?: string;
 };
@@ -985,6 +1044,7 @@ export type OrganizationsOrganizationLimits = {
   retentionWindowDays?: number;
   maxEventsPerMonth?: string;
   maxIntegrations?: number;
+  maxAgentTokensPerMonth?: string;
 };
 
 export type OrganizationsOrganizationMetadata = {
@@ -1002,6 +1062,10 @@ export type OrganizationsOrganizationUsage = {
   eventBucketCapacity?: number;
   eventBucketLastUpdatedAt?: string;
   nextEventBucketDecreaseAt?: string;
+  agentTokenBucketLevel?: number;
+  agentTokenBucketCapacity?: number;
+  agentTokenBucketLastUpdatedAt?: string;
+  nextAgentTokenBucketDecreaseAt?: string;
 };
 
 export type OrganizationsRemoveInvitationResponse = {
@@ -1275,6 +1339,34 @@ export type SuperplaneCanvasesUserRef = {
   name?: string;
 };
 
+export type SuperplaneComponentsEdge = {
+  sourceId?: string;
+  targetId?: string;
+  channel?: string;
+};
+
+export type SuperplaneComponentsNode = {
+  id?: string;
+  name?: string;
+  type?: ComponentsNodeType;
+  configuration?: {
+    [key: string]: unknown;
+  };
+  metadata?: {
+    [key: string]: unknown;
+  };
+  position?: ComponentsPosition;
+  component?: NodeComponentRef;
+  blueprint?: NodeBlueprintRef;
+  trigger?: NodeTriggerRef;
+  widget?: NodeWidgetRef;
+  isCollapsed?: boolean;
+  integration?: ComponentsIntegrationRef;
+  errorMessage?: string;
+  warningMessage?: string;
+  paused?: boolean;
+};
+
 export type SuperplaneComponentsOutputChannel = {
   name?: string;
   label?: string;
@@ -1287,10 +1379,14 @@ export type SuperplaneIntegrationsListIntegrationsResponse = {
 
 export type SuperplaneMeUser = {
   id?: string;
+  name?: string;
   email?: string;
   organizationId?: string;
   createdAt?: string;
   hasToken?: boolean;
+  permissions?: Array<AuthorizationPermission>;
+  roles?: Array<string>;
+  groups?: Array<string>;
 };
 
 export type SuperplaneOrganizationsListIntegrationsResponse = {
@@ -1333,22 +1429,17 @@ export type UsersAccountProvider = {
   updatedAt?: string;
 };
 
-export type UsersListUserPermissionsResponse = {
-  userId?: string;
-  domainType?: AuthorizationDomainType;
-  domainId?: string;
-  permissions?: Array<AuthorizationPermission>;
-};
-
-export type UsersListUserRolesResponse = {
-  userId?: string;
-  domainType?: AuthorizationDomainType;
-  domainId?: string;
-  roles?: Array<RolesRole>;
-};
-
 export type UsersListUsersResponse = {
   users?: Array<SuperplaneUsersUser>;
+};
+
+export type UsersRoleAssignment = {
+  roleName?: string;
+  roleDisplayName?: string;
+  roleDescription?: string;
+  domainType?: AuthorizationDomainType;
+  domainId?: string;
+  assignedAt?: string;
 };
 
 export type UsersUserMetadata = {
@@ -1358,22 +1449,13 @@ export type UsersUserMetadata = {
   updatedAt?: string;
 };
 
-export type UsersUserRoleAssignment = {
-  roleName?: string;
-  roleDisplayName?: string;
-  roleDescription?: string;
-  domainType?: AuthorizationDomainType;
-  domainId?: string;
-  assignedAt?: string;
-};
-
 export type UsersUserSpec = {
   displayName?: string;
-  accountProviders?: Array<UsersAccountProvider>;
 };
 
 export type UsersUserStatus = {
-  roleAssignments?: Array<UsersUserRoleAssignment>;
+  accountProviders?: Array<UsersAccountProvider>;
+  roles?: Array<UsersRoleAssignment>;
 };
 
 export type WidgetsDescribeWidgetResponse = {
@@ -2436,6 +2518,36 @@ export type CanvasesUpdateCanvasVersion2Responses = {
 export type CanvasesUpdateCanvasVersion2Response =
   CanvasesUpdateCanvasVersion2Responses[keyof CanvasesUpdateCanvasVersion2Responses];
 
+export type CanvasesDeleteCanvasVersionData = {
+  body?: never;
+  path: {
+    canvasId: string;
+    versionId: string;
+  };
+  query?: never;
+  url: "/api/v1/canvases/{canvasId}/versions/{versionId}";
+};
+
+export type CanvasesDeleteCanvasVersionErrors = {
+  /**
+   * An unexpected error response.
+   */
+  default: GooglerpcStatus;
+};
+
+export type CanvasesDeleteCanvasVersionError =
+  CanvasesDeleteCanvasVersionErrors[keyof CanvasesDeleteCanvasVersionErrors];
+
+export type CanvasesDeleteCanvasVersionResponses = {
+  /**
+   * A successful response.
+   */
+  200: CanvasesDeleteCanvasVersionResponse;
+};
+
+export type CanvasesDeleteCanvasVersionResponse2 =
+  CanvasesDeleteCanvasVersionResponses[keyof CanvasesDeleteCanvasVersionResponses];
+
 export type CanvasesDescribeCanvasVersionData = {
   body?: never;
   path: {
@@ -2466,6 +2578,36 @@ export type CanvasesDescribeCanvasVersionResponses = {
 export type CanvasesDescribeCanvasVersionResponse2 =
   CanvasesDescribeCanvasVersionResponses[keyof CanvasesDescribeCanvasVersionResponses];
 
+export type CanvasesApplyCanvasVersionChangesetData = {
+  body: CanvasesApplyCanvasVersionChangesetBody;
+  path: {
+    canvasId: string;
+    versionId: string;
+  };
+  query?: never;
+  url: "/api/v1/canvases/{canvasId}/versions/{versionId}";
+};
+
+export type CanvasesApplyCanvasVersionChangesetErrors = {
+  /**
+   * An unexpected error response.
+   */
+  default: GooglerpcStatus;
+};
+
+export type CanvasesApplyCanvasVersionChangesetError =
+  CanvasesApplyCanvasVersionChangesetErrors[keyof CanvasesApplyCanvasVersionChangesetErrors];
+
+export type CanvasesApplyCanvasVersionChangesetResponses = {
+  /**
+   * A successful response.
+   */
+  200: CanvasesApplyCanvasVersionChangesetResponse;
+};
+
+export type CanvasesApplyCanvasVersionChangesetResponse2 =
+  CanvasesApplyCanvasVersionChangesetResponses[keyof CanvasesApplyCanvasVersionChangesetResponses];
+
 export type CanvasesUpdateCanvasVersionData = {
   body: CanvasesUpdateCanvasVersionBody;
   path: {
@@ -2495,6 +2637,66 @@ export type CanvasesUpdateCanvasVersionResponses = {
 
 export type CanvasesUpdateCanvasVersionResponse2 =
   CanvasesUpdateCanvasVersionResponses[keyof CanvasesUpdateCanvasVersionResponses];
+
+export type CanvasesPublishCanvasVersionData = {
+  body: CanvasesPublishCanvasVersionBody;
+  path: {
+    canvasId: string;
+    versionId: string;
+  };
+  query?: never;
+  url: "/api/v1/canvases/{canvasId}/versions/{versionId}/publish";
+};
+
+export type CanvasesPublishCanvasVersionErrors = {
+  /**
+   * An unexpected error response.
+   */
+  default: GooglerpcStatus;
+};
+
+export type CanvasesPublishCanvasVersionError =
+  CanvasesPublishCanvasVersionErrors[keyof CanvasesPublishCanvasVersionErrors];
+
+export type CanvasesPublishCanvasVersionResponses = {
+  /**
+   * A successful response.
+   */
+  200: CanvasesPublishCanvasVersionResponse;
+};
+
+export type CanvasesPublishCanvasVersionResponse2 =
+  CanvasesPublishCanvasVersionResponses[keyof CanvasesPublishCanvasVersionResponses];
+
+export type CanvasesValidateCanvasVersionChangesetData = {
+  body: CanvasesValidateCanvasVersionChangesetBody;
+  path: {
+    canvasId: string;
+    versionId: string;
+  };
+  query?: never;
+  url: "/api/v1/canvases/{canvasId}/versions/{versionId}/validate";
+};
+
+export type CanvasesValidateCanvasVersionChangesetErrors = {
+  /**
+   * An unexpected error response.
+   */
+  default: GooglerpcStatus;
+};
+
+export type CanvasesValidateCanvasVersionChangesetError =
+  CanvasesValidateCanvasVersionChangesetErrors[keyof CanvasesValidateCanvasVersionChangesetErrors];
+
+export type CanvasesValidateCanvasVersionChangesetResponses = {
+  /**
+   * A successful response.
+   */
+  200: CanvasesValidateCanvasVersionChangesetResponse;
+};
+
+export type CanvasesValidateCanvasVersionChangesetResponse2 =
+  CanvasesValidateCanvasVersionChangesetResponses[keyof CanvasesValidateCanvasVersionChangesetResponses];
 
 export type CanvasesDeleteCanvasData = {
   body?: never;
@@ -2953,7 +3155,9 @@ export type OrganizationsAcceptInviteLinkResponse =
 export type MeMeData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    includePermissions?: boolean;
+  };
   url: "/api/v1/me";
 };
 
@@ -2970,10 +3174,10 @@ export type MeMeResponses = {
   /**
    * A successful response.
    */
-  200: SuperplaneMeUser;
+  200: MeMeResponse;
 };
 
-export type MeMeResponse = MeMeResponses[keyof MeMeResponses];
+export type MeMeResponse2 = MeMeResponses[keyof MeMeResponses];
 
 export type MeRegenerateTokenData = {
   body?: never;
@@ -4234,7 +4438,7 @@ export type UsersListUsersData = {
   query?: {
     domainType?: "DOMAIN_TYPE_UNSPECIFIED" | "DOMAIN_TYPE_ORGANIZATION";
     domainId?: string;
-    includeServiceAccounts?: boolean;
+    includeRoles?: boolean;
   };
   url: "/api/v1/users";
 };
@@ -4256,67 +4460,6 @@ export type UsersListUsersResponses = {
 };
 
 export type UsersListUsersResponse2 = UsersListUsersResponses[keyof UsersListUsersResponses];
-
-export type UsersListUserPermissionsData = {
-  body?: never;
-  path: {
-    userId: string;
-  };
-  query?: {
-    domainType?: "DOMAIN_TYPE_UNSPECIFIED" | "DOMAIN_TYPE_ORGANIZATION";
-    domainId?: string;
-  };
-  url: "/api/v1/users/{userId}/permissions";
-};
-
-export type UsersListUserPermissionsErrors = {
-  /**
-   * An unexpected error response.
-   */
-  default: GooglerpcStatus;
-};
-
-export type UsersListUserPermissionsError = UsersListUserPermissionsErrors[keyof UsersListUserPermissionsErrors];
-
-export type UsersListUserPermissionsResponses = {
-  /**
-   * A successful response.
-   */
-  200: UsersListUserPermissionsResponse;
-};
-
-export type UsersListUserPermissionsResponse2 =
-  UsersListUserPermissionsResponses[keyof UsersListUserPermissionsResponses];
-
-export type UsersListUserRolesData = {
-  body?: never;
-  path: {
-    userId: string;
-  };
-  query?: {
-    domainType?: "DOMAIN_TYPE_UNSPECIFIED" | "DOMAIN_TYPE_ORGANIZATION";
-    domainId?: string;
-  };
-  url: "/api/v1/users/{userId}/roles";
-};
-
-export type UsersListUserRolesErrors = {
-  /**
-   * An unexpected error response.
-   */
-  default: GooglerpcStatus;
-};
-
-export type UsersListUserRolesError = UsersListUserRolesErrors[keyof UsersListUserRolesErrors];
-
-export type UsersListUserRolesResponses = {
-  /**
-   * A successful response.
-   */
-  200: UsersListUserRolesResponse;
-};
-
-export type UsersListUserRolesResponse2 = UsersListUserRolesResponses[keyof UsersListUserRolesResponses];
 
 export type WidgetsListWidgetsData = {
   body?: never;
