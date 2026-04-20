@@ -76,3 +76,47 @@ When working with database transactions, follow these rules to ensure data consi
   - The non-transaction variant should call the transaction variant: `return FindUserInTransaction(database.Conn(), ...)`
 
 **Why this matters**: Using `database.Conn()` inside transaction contexts breaks isolation, causes data inconsistency on rollback, and can lead to race conditions.
+
+## Cursor Cloud specific instructions
+
+### Environment overview
+
+All development runs inside Docker containers orchestrated by `docker-compose.dev.yml`. The key services are:
+
+| Service | Purpose | Port |
+|---------|---------|------|
+| `app` | Go backend + Vite frontend (hot-reload via `air` + `vite`) | 8000 (API/UI), 5173 (Vite HMR), 50051 (gRPC) |
+| `agent` | Python AI agent service (`uvicorn` + `uv`) | 8090 |
+| `db` | PostgreSQL 17 | 5432 |
+| `rabbitmq` | Message broker for async workers | 5672, 15672 |
+| `otel` | OpenTelemetry Collector (optional) | 4317, 4318 |
+| `pgweb` | PostgreSQL web UI (optional) | 8081 |
+
+### Starting and stopping services
+
+- `make dev.start` brings up all containers in the background and waits for the health check at `http://localhost:8000/health`.
+- `make dev.down` tears everything down.
+- `make dev.logs` / `make dev.logs.app` to tail logs.
+
+### Running tests
+
+- Backend tests require a `superplane_test` database. If it doesn't exist, create it: `make db.create DB_NAME=superplane_test && make db.migrate DB_NAME=superplane_test`.
+- The `make test.setup` target handles test DB creation for both the main app and agent.
+- Targeted tests: `make test PKG_TEST_PACKAGES=./pkg/<package>/...`
+- All test and lint commands run inside the Docker containers via `docker compose exec/run`.
+
+### Docker-in-Docker (Cloud VM)
+
+The Cloud VM requires Docker-in-Docker with these workarounds:
+- `fuse-overlayfs` storage driver (kernel doesn't support all overlay2 features)
+- `iptables-legacy` (kernel doesn't support all nftables features)
+- Docker daemon must be started with `sudo dockerd &` before running any `make` targets.
+- After starting dockerd, run `sudo chmod 666 /var/run/docker.sock` so non-root users can access it.
+
+### Agent `.env` file
+
+The `agent/.env` file must exist (even if empty) before running `make dev.setup` or `make dev.start`. It is gitignored. Create it with `touch agent/.env`. For full AI features, add `ANTHROPIC_API_KEY=<key>` to this file.
+
+### Fresh installation
+
+On a fresh database, navigating to `http://localhost:8000` shows the owner setup wizard. Complete it to create the initial admin account before using the application.
