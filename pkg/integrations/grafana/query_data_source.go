@@ -40,6 +40,7 @@ type grafanaQuery struct {
 	Expr       string `json:"expr,omitempty"`
 	Query      string `json:"query,omitempty"`
 	Format     string `json:"format,omitempty"`
+	MaxLines   int    `json:"maxLines,omitempty"`
 }
 
 const grafanaDateTimeFormat = "2006-01-02T15:04"
@@ -70,7 +71,6 @@ func (q *QueryDataSource) Documentation() string {
 - **Data Source**: The Grafana data source to query
 - **Query**: The datasource query (PromQL, InfluxQL, etc.)
 - **Time From / Time To**: Optional expressions for the query range (for example ` + "`now() - duration(\"5m\")`" + ` and ` + "`now()`" + `)
-- **Timezone**: Interprets datetime-local expression results using the selected timezone offset
 - If omitted, SuperPlane defaults the query to the last 5 minutes
 - **Format**: Optional query format (depends on the datasource)
 
@@ -129,14 +129,6 @@ func (q *QueryDataSource) Configuration() []configuration.Field {
 			Required:    false,
 			Description: "Optional end of the query time range (expression text)",
 			Placeholder: `{{ now() }}`,
-		},
-		{
-			Name:        "timezone",
-			Label:       "Timezone",
-			Type:        configuration.FieldTypeTimezone,
-			Required:    false,
-			Default:     "current",
-			Description: "Timezone offset used for Time From / Time To picker values. Relative Grafana values like now-1h ignore this field.",
 		},
 		{
 			Name:        "format",
@@ -242,14 +234,6 @@ func (q *QueryDataSource) Cancel(ctx core.ExecutionContext) error {
 
 func (q *QueryDataSource) ProcessQueueItem(ctx core.ProcessQueueContext) (*uuid.UUID, error) {
 	return ctx.DefaultProcessing()
-}
-
-func (q *QueryDataSource) Actions() []core.Action {
-	return []core.Action{}
-}
-
-func (q *QueryDataSource) HandleAction(ctx core.ActionContext) error {
-	return nil
 }
 
 func (q *QueryDataSource) HandleWebhook(ctx core.WebhookRequestContext) (int, *core.WebhookResponseBody, error) {
@@ -407,4 +391,12 @@ func validateQueryTimeValue(value *string, timezone *string) error {
 
 	_, _, err := parseGrafanaQueryTime(strings.TrimSpace(*value), timezone)
 	return err
+}
+
+func (q *QueryDataSource) Hooks() []core.Hook {
+	return []core.Hook{}
+}
+
+func (q *QueryDataSource) HandleHook(ctx core.ActionHookContext) error {
+	return nil
 }
