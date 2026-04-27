@@ -61,6 +61,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -175,11 +176,7 @@ func NewServer(
 		registry:              registry,
 		authService:           authorizationService,
 		upgrader: &websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				// Allow all connections - you may want to restrict this in production
-				// TODO: implement origin checking
-				return true
-			},
+			CheckOrigin:     makeOriginChecker(getAllowedOrigins()),
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},
@@ -218,10 +215,30 @@ func getOAuthProviders() map[string]authentication.ProviderConfig {
 	return providers
 }
 
+func newGRPCGatewayMarshaler() runtime.Marshaler {
+	// Keep parity with grpc-gateway's default marshaler configuration
+	// (HTTPBodyMarshaler + JSONPb + EmitUnpopulated=true), but reject unknown
+	// request fields by setting DiscardUnknown=false.
+	//
+	// Note: because this is an explicit override, grpc-gateway default option
+	// changes in future upgrades are not picked up automatically.
+	return &runtime.HTTPBodyMarshaler{
+		Marshaler: &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				EmitUnpopulated: true,
+			},
+			UnmarshalOptions: protojson.UnmarshalOptions{
+				DiscardUnknown: false,
+			},
+		},
+	}
+}
+
 func (s *Server) RegisterGRPCGateway(grpcServerAddr string) error {
 	ctx := context.Background()
 
 	grpcGatewayMux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, newGRPCGatewayMarshaler()),
 		runtime.WithIncomingHeaderMatcher(headersMatcher),
 		runtime.WithMetadata(func(ctx context.Context, _ *http.Request) metadata.MD {
 			/*
@@ -1283,4 +1300,48 @@ func getBaseURL() string {
 		baseURL = fmt.Sprintf("http://localhost:%s", port)
 	}
 	return baseURL
+}
+
+// getAllowedOrigins returns the list of origins permitted to establish
+// WebSocket connections. It reads a comma-separated list from
+// ALLOWED_WS_ORIGINS and falls back to BASE_URL for single-tenant
+// deployments.
+func getAllowedOrigins() []string {
+	if raw := os.Getenv("ALLOWED_WS_ORIGINS"); raw != "" {
+		parts := strings.Split(raw, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		return out
+	}
+	return []string{getBaseURL()}
+}
+
+// makeOriginChecker returns a CheckOrigin function that validates the
+// WebSocket handshake Origin header against the allowed list per RFC 6454.
+// Requests without an Origin header (non-browser clients such as CLI or
+// server-to-server) are permitted, since those rely on Authorization-header
+// auth which is not susceptible to cross-site WebSocket hijacking.
+func makeOriginChecker(allowed []string) func(*http.Request) bool {
+	set := make(map[string]struct{}, len(allowed))
+	for _, o := range allowed {
+		if u, err := url.Parse(strings.TrimRight(o, "/")); err == nil && u.Host != "" {
+			set[strings.ToLower(u.Scheme+"://"+u.Host)] = struct{}{}
+		}
+	}
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return false
+		}
+		_, ok := set[strings.ToLower(u.Scheme+"://"+u.Host)]
+		return ok
+	}
 }
