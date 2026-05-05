@@ -76,3 +76,47 @@ When working with database transactions, follow these rules to ensure data consi
   - The non-transaction variant should call the transaction variant: `return FindUserInTransaction(database.Conn(), ...)`
 
 **Why this matters**: Using `database.Conn()` inside transaction contexts breaks isolation, causes data inconsistency on rollback, and can lead to race conditions.
+
+## Cursor Cloud specific instructions
+
+### Services overview
+
+All development runs inside Docker containers orchestrated via `docker-compose.dev.yml`:
+
+| Service | Purpose | Port(s) |
+|---------|---------|---------|
+| `app` | Go backend + Vite frontend (hot-reload via `air` + `npm run dev`) | 8000 (HTTP/API), 50051 (gRPC), 5173 (Vite HMR) |
+| `agent` | Python AI agent (FastAPI/uvicorn, hot-reload) | 8090 |
+| `db` | PostgreSQL 17.5 | 5432 |
+| `rabbitmq` | Message broker | 5672, 15672 (mgmt UI) |
+
+### Starting the environment
+
+After the update script runs, start services with:
+
+```sh
+make dev.start   # starts containers + waits for health at http://localhost:8000
+```
+
+### Running tests
+
+Backend tests require the `superplane_test` database to exist. If it doesn't, create it:
+
+```sh
+make db.create DB_NAME=superplane_test
+make db.migrate DB_NAME=superplane_test
+make -C agent db.create DB_NAME=agents_test DB_PASSWORD=the-cake-is-a-lie
+make -C agent db.migrate DB_NAME=agents_test DB_PASSWORD=the-cake-is-a-lie
+```
+
+Then run tests per the Build, Test, and Development Commands section above.
+
+### Key gotchas
+
+- `make format.js` and `make format.js.check` run **outside** Docker (directly on the host). They require Node.js 22.x and `npm ci` in `web_src/` to be run on the host.
+- `make lint`, `make check.build.app`, `make check.build.ui`, and `make test` all run **inside** Docker via `docker compose exec` or `docker compose run`.
+- The `dev.setup` Makefile target only creates `superplane_dev` and `agents_dev` databases. You must separately create `superplane_test` and `agents_test` databases (see above) before running unit/integration tests.
+- Owner setup is required on a fresh database. POST to `/api/v1/setup-owner` with `{"email":"...","first_name":"...","last_name":"...","password":"..."}`.
+- Login uses form-encoded POST to `/login` (not JSON, not `/api/v1/login`).
+- gRPC gateway API calls require `X-Organization-ID` header and the `account_token` cookie from login.
+- Docker must be running before any `make` commands that use containers. Start dockerd if not already running.
