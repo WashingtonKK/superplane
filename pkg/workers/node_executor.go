@@ -9,7 +9,6 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/google/uuid"
 	"github.com/renderedtext/go-tackle"
@@ -172,8 +171,6 @@ func (w *NodeExecutor) LockAndProcessNodeExecution(id uuid.UUID) error {
 	}
 
 	err := database.Conn().Transaction(func(tx *gorm.DB) error {
-		var execution models.CanvasNodeExecution
-
 		//
 		// Try to lock the execution record for update.
 		// If we can't, it means another worker is already processing it.
@@ -193,19 +190,13 @@ func (w *NodeExecutor) LockAndProcessNodeExecution(id uuid.UUID) error {
 		// Note: We use SKIP LOCKED to avoid waiting on locked records.
 		//
 
-		err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("id = ?", id).
-			Where("state = ?", models.CanvasNodeExecutionStatePending).
-			First(&execution).
-			Error
-
+		execution, err := models.LockPendingNodeExecutionInActiveCanvas(tx, id)
 		if err != nil {
 			w.logger.Debugf("Execution %s already being processed - skipping", id.String())
 			return ErrRecordLocked
 		}
 
-		return w.processNodeExecution(tx, &execution, onNewEvents)
+		return w.processNodeExecution(tx, execution, onNewEvents)
 	})
 
 	if err != nil {
@@ -229,7 +220,7 @@ func (w *NodeExecutor) processNodeExecution(tx *gorm.DB, execution *models.Canva
 		return w.executeBlueprintNode(tx, execution, node)
 	}
 
-	return w.executeComponentNode(tx, execution, node, onNewEvents)
+	return w.executeActionNode(tx, execution, node, onNewEvents)
 }
 
 func (w *NodeExecutor) executeBlueprintNode(tx *gorm.DB, execution *models.CanvasNodeExecution, node *models.CanvasNode) error {
@@ -305,11 +296,11 @@ func (w *NodeExecutor) executeBlueprintNode(tx *gorm.DB, execution *models.Canva
 func (w *NodeExecutor) configurationFieldsForBlueprintNode(tx *gorm.DB, node models.Node) ([]configuration.Field, error) {
 	switch {
 	case node.Ref.Component != nil && node.Ref.Component.Name != "":
-		comp, err := w.registry.GetComponent(node.Ref.Component.Name)
+		action, err := w.registry.GetAction(node.Ref.Component.Name)
 		if err != nil {
 			return nil, fmt.Errorf("component %s not found: %w", node.Ref.Component.Name, err)
 		}
-		return comp.Configuration(), nil
+		return action.Configuration(), nil
 	case node.Ref.Trigger != nil && node.Ref.Trigger.Name != "":
 		trigger, err := w.registry.GetTrigger(node.Ref.Trigger.Name)
 		if err != nil {
@@ -327,7 +318,7 @@ func (w *NodeExecutor) configurationFieldsForBlueprintNode(tx *gorm.DB, node mod
 	}
 }
 
-func (w *NodeExecutor) executeComponentNode(tx *gorm.DB, execution *models.CanvasNodeExecution, node *models.CanvasNode, onNewEvents func([]models.CanvasEvent)) error {
+func (w *NodeExecutor) executeActionNode(tx *gorm.DB, execution *models.CanvasNodeExecution, node *models.CanvasNode, onNewEvents func([]models.CanvasEvent)) error {
 	logger := logging.WithExecution(
 		logging.WithNode(w.logger, *node),
 		execution,
@@ -341,10 +332,10 @@ func (w *NodeExecutor) executeComponentNode(tx *gorm.DB, execution *models.Canva
 	}
 
 	ref := node.Ref.Data()
-	component, err := w.registry.GetComponent(ref.Component.Name)
+	action, err := w.registry.GetAction(ref.Component.Name)
 	if err != nil {
-		logger.Errorf("component %s not found: %v", ref.Component.Name, err)
-		return fmt.Errorf("component %s not found: %w", ref.Component.Name, err)
+		logger.Errorf("action %s not found: %v", ref.Component.Name, err)
+		return fmt.Errorf("action %s not found: %w", ref.Component.Name, err)
 	}
 
 	inputEvent, err := models.FindCanvasEventInTransaction(tx, execution.EventID)
@@ -380,7 +371,7 @@ func (w *NodeExecutor) executeComponentNode(tx *gorm.DB, execution *models.Canva
 		BaseURL:        w.baseURL,
 		Configuration:  execution.Configuration.Data(),
 		Data:           input,
-		HTTP:           w.registry.HTTPContext(),
+		HTTP:           w.registry.HTTPContextInTransaction(tx),
 		Metadata:       contexts.NewExecutionMetadataContext(tx, execution),
 		NodeMetadata:   contexts.NewNodeMetadataContext(tx, node),
 		ExecutionState: contexts.NewExecutionStateContext(tx, execution, onNewEvents),
@@ -410,13 +401,13 @@ func (w *NodeExecutor) executeComponentNode(tx *gorm.DB, execution *models.Canva
 	}
 
 	ctx.Logger = logger
-	if err := component.Execute(ctx); err != nil {
-		logger.Errorf("failed to execute component: %v", err)
+	if err := action.Execute(ctx); err != nil {
+		logger.Errorf("failed to execute action: %v", err)
 		err = execution.FailInTransaction(tx, models.CanvasNodeExecutionResultReasonError, err.Error())
 		return err
 	}
 
-	logger.Info("Component executed successfully")
+	logger.Info("Action executed successfully")
 
 	return tx.Save(execution).Error
 }

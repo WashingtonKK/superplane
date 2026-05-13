@@ -50,15 +50,7 @@ func (s *CanvasService) DescribeCanvas(ctx context.Context, req *pb.DescribeCanv
 
 func (s *CanvasService) UpdateCanvas(ctx context.Context, req *pb.UpdateCanvasRequest) (*pb.UpdateCanvasResponse, error) {
 	organizationID := ctx.Value(authorization.OrganizationContextKey).(string)
-	return canvases.UpdateCanvas(
-		ctx,
-		s.authService,
-		organizationID,
-		req.Id,
-		req.Name,
-		req.Description,
-		req.ChangeManagement,
-	)
+	return canvases.UpdateCanvas(ctx, s.authService, organizationID, req.Id, req.Name, req.Description, req.ChangeManagement)
 }
 
 func (s *CanvasService) CreateCanvas(ctx context.Context, req *pb.CreateCanvasRequest) (*pb.CreateCanvasResponse, error) {
@@ -278,7 +270,7 @@ func (s *CanvasService) ListNodeEvents(ctx context.Context, req *pb.ListNodeEven
 	return canvases.ListNodeEvents(ctx, s.registry, canvasID, req.NodeId, req.Limit, req.Before)
 }
 
-func (s *CanvasService) EmitNodeEvent(ctx context.Context, req *pb.EmitNodeEventRequest) (*pb.EmitNodeEventResponse, error) {
+func (s *CanvasService) ReemitTriggerEvent(ctx context.Context, req *pb.ReemitTriggerEventRequest) (*pb.ReemitTriggerEventResponse, error) {
 	organizationID := ctx.Value(authorization.OrganizationContextKey).(string)
 
 	canvasID, err := uuid.Parse(req.CanvasId)
@@ -290,21 +282,21 @@ func (s *CanvasService) EmitNodeEvent(ctx context.Context, req *pb.EmitNodeEvent
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
 	}
 
-	if req.Channel == "" {
-		return nil, status.Error(codes.InvalidArgument, "channel is required")
+	eventID, err := uuid.Parse(req.EventId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid event_id")
 	}
 
-	return canvases.EmitNodeEvent(
+	return canvases.ReemitTriggerEvent(
 		ctx,
 		uuid.MustParse(organizationID),
 		canvasID,
 		req.NodeId,
-		req.Channel,
-		req.Data.AsMap(),
+		eventID,
 	)
 }
 
-func (s *CanvasService) InvokeNodeExecutionAction(ctx context.Context, req *pb.InvokeNodeExecutionActionRequest) (*pb.InvokeNodeExecutionActionResponse, error) {
+func (s *CanvasService) InvokeNodeExecutionHook(ctx context.Context, req *pb.InvokeNodeExecutionHookRequest) (*pb.InvokeNodeExecutionHookResponse, error) {
 	organizationID := ctx.Value(authorization.OrganizationContextKey).(string)
 
 	canvasID, err := uuid.Parse(req.CanvasId)
@@ -317,7 +309,7 @@ func (s *CanvasService) InvokeNodeExecutionAction(ctx context.Context, req *pb.I
 		return nil, status.Error(codes.InvalidArgument, "invalid execution_id")
 	}
 
-	return canvases.InvokeNodeExecutionAction(
+	return canvases.InvokeNodeExecutionHook(
 		ctx,
 		s.authService,
 		s.encryptor,
@@ -325,12 +317,12 @@ func (s *CanvasService) InvokeNodeExecutionAction(ctx context.Context, req *pb.I
 		uuid.MustParse(organizationID),
 		canvasID,
 		executionID,
-		req.ActionName,
+		req.HookName,
 		req.Parameters.AsMap(),
 	)
 }
 
-func (s *CanvasService) InvokeNodeTriggerAction(ctx context.Context, req *pb.InvokeNodeTriggerActionRequest) (*pb.InvokeNodeTriggerActionResponse, error) {
+func (s *CanvasService) InvokeNodeTriggerHook(ctx context.Context, req *pb.InvokeNodeTriggerHookRequest) (*pb.InvokeNodeTriggerHookResponse, error) {
 	organizationID := ctx.Value(authorization.OrganizationContextKey).(string)
 
 	canvasID, err := uuid.Parse(req.CanvasId)
@@ -342,11 +334,11 @@ func (s *CanvasService) InvokeNodeTriggerAction(ctx context.Context, req *pb.Inv
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
 	}
 
-	if req.ActionName == "" {
-		return nil, status.Error(codes.InvalidArgument, "action_name is required")
+	if req.HookName == "" {
+		return nil, status.Error(codes.InvalidArgument, "hook_name is required")
 	}
 
-	return canvases.InvokeNodeTriggerAction(
+	return canvases.InvokeNodeTriggerHook(
 		ctx,
 		s.authService,
 		s.encryptor,
@@ -354,7 +346,7 @@ func (s *CanvasService) InvokeNodeTriggerAction(ctx context.Context, req *pb.Inv
 		uuid.MustParse(organizationID),
 		canvasID,
 		req.NodeId,
-		req.ActionName,
+		req.HookName,
 		req.Parameters.AsMap(),
 		s.webhookBaseURL,
 	)
@@ -367,6 +359,15 @@ func (s *CanvasService) ListCanvasEvents(ctx context.Context, req *pb.ListCanvas
 	}
 
 	return canvases.ListCanvasEvents(ctx, s.registry, canvasID, req.Limit, req.Before)
+}
+
+func (s *CanvasService) ListRuns(ctx context.Context, req *pb.ListRunsRequest) (*pb.ListRunsResponse, error) {
+	canvasID, err := uuid.Parse(req.CanvasId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid workflow_id")
+	}
+
+	return canvases.ListRuns(ctx, s.registry, canvasID, req.Limit, req.Before, req.States, req.Results)
 }
 
 func (s *CanvasService) ListCanvasMemories(ctx context.Context, req *pb.ListCanvasMemoriesRequest) (*pb.ListCanvasMemoriesResponse, error) {

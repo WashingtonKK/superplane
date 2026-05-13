@@ -22,17 +22,20 @@ import (
 	"github.com/superplanehq/superplane/pkg/templates"
 	"github.com/superplanehq/superplane/pkg/usage"
 	"github.com/superplanehq/superplane/pkg/workers"
+	"gorm.io/gorm"
 
 	// Import integrations, components and triggers to register them via init()
 	_ "github.com/superplanehq/superplane/pkg/components/addmemory"
 	_ "github.com/superplanehq/superplane/pkg/components/approval"
 	_ "github.com/superplanehq/superplane/pkg/components/deletememory"
 	_ "github.com/superplanehq/superplane/pkg/components/filter"
+	_ "github.com/superplanehq/superplane/pkg/components/graphql"
 	_ "github.com/superplanehq/superplane/pkg/components/http"
 	_ "github.com/superplanehq/superplane/pkg/components/if"
 	_ "github.com/superplanehq/superplane/pkg/components/merge"
 	_ "github.com/superplanehq/superplane/pkg/components/noop"
 	_ "github.com/superplanehq/superplane/pkg/components/readmemory"
+	_ "github.com/superplanehq/superplane/pkg/components/runner"
 	_ "github.com/superplanehq/superplane/pkg/components/send_email"
 	_ "github.com/superplanehq/superplane/pkg/components/ssh"
 	_ "github.com/superplanehq/superplane/pkg/components/timegate"
@@ -67,6 +70,7 @@ import (
 	_ "github.com/superplanehq/superplane/pkg/integrations/launchdarkly"
 	_ "github.com/superplanehq/superplane/pkg/integrations/logfire"
 	_ "github.com/superplanehq/superplane/pkg/integrations/newrelic"
+	_ "github.com/superplanehq/superplane/pkg/integrations/oci"
 	_ "github.com/superplanehq/superplane/pkg/integrations/octopus"
 	_ "github.com/superplanehq/superplane/pkg/integrations/openai"
 	_ "github.com/superplanehq/superplane/pkg/integrations/pagerduty"
@@ -428,6 +432,7 @@ func Start() {
 		panic("OIDC_KEYS_PATH must be set")
 	}
 
+	appEnv := os.Getenv("APP_ENV")
 	jwtSigner := jwt.NewSigner(jwtSecret)
 	webhooksBaseURL := getWebhookBaseURL(baseURL)
 	oidcProvider, err := oidc.NewProviderFromKeyDir(webhooksBaseURL, oidcKeysPath)
@@ -435,20 +440,35 @@ func Start() {
 		panic(fmt.Sprintf("failed to load OIDC keys: %v", err))
 	}
 
-	registry, err := registry.NewRegistry(encryptorInstance, registry.HTTPOptions{
-		MaxResponseBytes: DefaultMaxHTTPResponseBytes,
-		PolicyResolver: func() (registry.HTTPPolicy, error) {
-			policy, err := networkpolicy.ResolveHTTPPolicy()
-			if err != nil {
-				return registry.HTTPPolicy{}, err
-			}
+	registry, err := registry.NewRegistryWithOptions(registry.RegistryOptions{
+		Encryptor: encryptorInstance,
+		AppEnv:    appEnv,
+		HTTP: registry.HTTPOptions{
+			MaxResponseBytes: DefaultMaxHTTPResponseBytes,
+			PolicyResolver: func() (registry.HTTPPolicy, error) {
+				policy, err := networkpolicy.ResolveHTTPPolicy()
+				if err != nil {
+					return registry.HTTPPolicy{}, err
+				}
 
-			return registry.HTTPPolicy{
-				BlockedHosts:    policy.BlockedHosts,
-				PrivateIPRanges: policy.PrivateIPRanges,
-			}, nil
+				return registry.HTTPPolicy{
+					BlockedHosts:    policy.BlockedHosts,
+					PrivateIPRanges: policy.PrivateIPRanges,
+				}, nil
+			},
+			PolicyResolverInTransaction: func(tx *gorm.DB) (registry.HTTPPolicy, error) {
+				policy, err := networkpolicy.ResolveHTTPPolicyInTransaction(tx)
+				if err != nil {
+					return registry.HTTPPolicy{}, err
+				}
+
+				return registry.HTTPPolicy{
+					BlockedHosts:    policy.BlockedHosts,
+					PrivateIPRanges: policy.PrivateIPRanges,
+				}, nil
+			},
+			PolicyCacheTTL: 5 * time.Second,
 		},
-		PolicyCacheTTL: 5 * time.Second,
 	})
 
 	if err != nil {

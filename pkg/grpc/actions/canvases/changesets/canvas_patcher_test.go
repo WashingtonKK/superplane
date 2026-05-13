@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/superplanehq/superplane/pkg/core"
 	"github.com/superplanehq/superplane/pkg/database"
 	"github.com/superplanehq/superplane/pkg/models"
 	pb "github.com/superplanehq/superplane/pkg/protos/canvases"
@@ -42,7 +43,7 @@ func Test__CanvasPatcher(t *testing.T) {
 					},
 				},
 			},
-			[]models.Edge{{SourceID: "node-a", TargetID: "node-b", Channel: "default"}},
+			[]models.Edge{{SourceID: "node-a", TargetID: "node-b", Channel: "true"}},
 		)
 
 		steps.whenHandling(&pb.CanvasChangeset{
@@ -69,7 +70,7 @@ func Test__CanvasPatcher(t *testing.T) {
 					Edge: &pb.CanvasChangeset_Change_Edge{
 						SourceId: "node-a",
 						TargetId: "node-c",
-						Channel:  "default",
+						Channel:  "true",
 					},
 				},
 				{
@@ -85,7 +86,7 @@ func Test__CanvasPatcher(t *testing.T) {
 		steps.assertHasNodeBlock("node-c", "noop")
 		steps.assertHasNoNodeIntegrationID("node-c")
 		steps.assertNodeCount(2)
-		steps.assertHasEdge("node-a", "node-c", "default")
+		steps.assertHasEdge("node-a", "node-c", "true")
 		steps.assertEdgeCount(1)
 		steps.assertGraphIsValid()
 	})
@@ -203,6 +204,54 @@ func Test__CanvasPatcher(t *testing.T) {
 		steps.assertNoError()
 		steps.assertNodePosition("node-a", 125, 240)
 		steps.assertNodePosition("node-b", 780, 95)
+	})
+
+	t.Run("rejects edges that reference an undefined source output channel", func(t *testing.T) {
+		steps := &CanvasPatcherSteps{t: t, registry: r.Registry, orgID: r.Organization.ID}
+		steps.givenCanvasVersion(
+			[]models.Node{
+				{
+					ID:   "http-1",
+					Name: "HTTP Request",
+					Type: models.NodeTypeComponent,
+					Ref: models.NodeRef{
+						Component: &models.ComponentRef{Name: "http"},
+					},
+					Configuration: map[string]any{
+						"method": "GET",
+						"url":    "https://example.com",
+					},
+				},
+				{
+					ID:   "if-1",
+					Name: "If",
+					Type: models.NodeTypeComponent,
+					Ref: models.NodeRef{
+						Component: &models.ComponentRef{Name: "if"},
+					},
+					Configuration: map[string]any{
+						"expression": "true",
+					},
+				},
+			},
+			nil,
+		)
+
+		steps.whenHandling(&pb.CanvasChangeset{
+			Changes: []*pb.CanvasChangeset_Change{
+				{
+					Type: pb.CanvasChangeset_Change_ADD_EDGE,
+					Edge: &pb.CanvasChangeset_Change_Edge{
+						SourceId: "http-1",
+						TargetId: "if-1",
+						Channel:  "default",
+					},
+				},
+			},
+		}, nil)
+
+		steps.assertHasError()
+		steps.assertErrorContains(`source node http-1 does not have output channel "default"`)
 	})
 
 	t.Run("returns error when change object is misconfigured", func(t *testing.T) {
@@ -770,6 +819,76 @@ func Test__CanvasPatcher(t *testing.T) {
 		})
 		steps.assertHasNodeBlock("node-a", "github.getIssue")
 		steps.assertHasNodeIntegrationID("node-a", integration.ID.String())
+	})
+
+	t.Run("accepts integration component when capability is enabled", func(t *testing.T) {
+		steps := &CanvasPatcherSteps{t: t, registry: r.Registry, orgID: r.Organization.ID}
+		steps.givenCanvasVersion(nil, nil)
+
+		integration := support.CreateIntegrationWithCapabilities(t, r.Organization.ID, []models.CapabilityState{
+			{Name: "github.getIssue", State: core.IntegrationCapabilityStateEnabled},
+		})
+
+		steps.whenHandling(&pb.CanvasChangeset{
+			Changes: []*pb.CanvasChangeset_Change{
+				{
+					Type: pb.CanvasChangeset_Change_ADD_NODE,
+					Node: &pb.CanvasChangeset_Change_Node{
+						Id:            "node-a",
+						Name:          "Node A",
+						Block:         "github.getIssue",
+						IntegrationId: integration.ID.String(),
+						Configuration: structFromMap(t, map[string]any{
+							"repository":  "superplanehq/superplane",
+							"issueNumber": "1",
+						}),
+					},
+				},
+			},
+		}, nil)
+
+		steps.assertNoError()
+		steps.assertNodeCount(1)
+		steps.assertHasNode("node-a", "Node A", map[string]any{
+			"repository":  "superplanehq/superplane",
+			"issueNumber": "1",
+		})
+		steps.assertHasNodeBlock("node-a", "github.getIssue")
+		steps.assertHasNodeIntegrationID("node-a", integration.ID.String())
+	})
+
+	t.Run("integration component with disabled capability -> sets node error without returning error", func(t *testing.T) {
+		steps := &CanvasPatcherSteps{t: t, registry: r.Registry, orgID: r.Organization.ID}
+		steps.givenCanvasVersion(nil, nil)
+
+		integration := support.CreateIntegrationWithCapabilities(t, r.Organization.ID, []models.CapabilityState{
+			{Name: "github.getIssue", State: core.IntegrationCapabilityStateDisabled},
+		})
+
+		steps.whenHandling(&pb.CanvasChangeset{
+			Changes: []*pb.CanvasChangeset_Change{
+				{
+					Type: pb.CanvasChangeset_Change_ADD_NODE,
+					Node: &pb.CanvasChangeset_Change_Node{
+						Id:            "node-a",
+						Name:          "Node A",
+						Block:         "github.getIssue",
+						IntegrationId: integration.ID.String(),
+						Configuration: structFromMap(t, map[string]any{
+							"repository":  "superplanehq/superplane",
+							"issueNumber": "1",
+						}),
+					},
+				},
+			},
+		}, nil)
+
+		steps.assertNoError()
+		steps.assertNodeCount(1)
+		steps.assertHasNodeBlock("node-a", "github.getIssue")
+		steps.assertHasNoNodeIntegrationID("node-a")
+		steps.assertNodeErrorContains("node-a", "github.getIssue is not enabled")
+		steps.assertNodeErrorContains("node-a", integration.InstallationName)
 	})
 }
 

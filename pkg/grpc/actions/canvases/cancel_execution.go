@@ -10,6 +10,7 @@ import (
 	"github.com/superplanehq/superplane/pkg/core"
 	"github.com/superplanehq/superplane/pkg/crypto"
 	"github.com/superplanehq/superplane/pkg/database"
+	"github.com/superplanehq/superplane/pkg/grpc/actions/messages"
 	"github.com/superplanehq/superplane/pkg/logging"
 	"github.com/superplanehq/superplane/pkg/models"
 	pb "github.com/superplanehq/superplane/pkg/protos/canvases"
@@ -61,6 +62,8 @@ func CancelExecution(ctx context.Context, authService authorization.Authorizatio
 		return nil, err
 	}
 
+	messages.NewCanvasExecutionMessage(workflowID.String(), execution.ID.String(), execution.NodeID).Publish()
+
 	return &pb.CancelExecutionResponse{}, nil
 }
 
@@ -76,9 +79,9 @@ func cancelExecutionInTransaction(tx *gorm.DB, authService authorization.Authori
 	if node.Type == models.NodeTypeComponent {
 		ref := node.Ref.Data()
 		if ref.Component != nil {
-			component, err := registry.GetComponent(ref.Component.Name)
+			action, err := registry.GetAction(ref.Component.Name)
 			if err != nil {
-				log.Errorf("component %s not found: %v", ref.Component.Name, err)
+				log.Errorf("action %s not found: %v", ref.Component.Name, err)
 				return err
 			}
 
@@ -96,7 +99,7 @@ func cancelExecutionInTransaction(tx *gorm.DB, authService authorization.Authori
 				NodeID:         execution.NodeID,
 				NodeName:       node.Name,
 				Configuration:  execution.Configuration.Data(),
-				HTTP:           registry.HTTPContext(),
+				HTTP:           registry.HTTPContextInTransaction(tx),
 				Metadata:       contexts.NewExecutionMetadataContext(tx, execution),
 				ExecutionState: contexts.NewExecutionStateContext(tx, execution, nil),
 				Requests:       contexts.NewExecutionRequestContext(tx, execution),
@@ -117,7 +120,7 @@ func cancelExecutionInTransaction(tx *gorm.DB, authService authorization.Authori
 			}
 
 			ctx.Logger = logger
-			if err := component.Cancel(ctx); err != nil {
+			if err := action.Cancel(ctx); err != nil {
 				log.Errorf("failed to cancel component execution %s: %v", execution.ID.String(), err)
 			}
 		}

@@ -25,6 +25,11 @@ type IntegrationContext struct {
 	encryptor   crypto.Encryptor
 	registry    *registry.Registry
 	onNewEvents func([]models.CanvasEvent)
+
+	//
+	// Lazily create a secret storage, when Secrets() used.
+	//
+	secretStorage *IntegrationSecretStorage
 }
 
 func NewIntegrationContext(
@@ -225,8 +230,8 @@ func (c *IntegrationContext) GetConfig(name string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to find config %s: %w", name, err)
 	}
 
-	if configDef.Type != configuration.FieldTypeString && configDef.Type != configuration.FieldTypeSelect {
-		return nil, fmt.Errorf("config %s is not of type: [string, select]", name)
+	if configDef.Type != configuration.FieldTypeString && configDef.Type != configuration.FieldTypeSelect && configDef.Type != configuration.FieldTypeText {
+		return nil, fmt.Errorf("config %s is not of type: [string, select, text]", name)
 	}
 
 	s, ok := v.(string)
@@ -302,6 +307,7 @@ func (c *IntegrationContext) GetState() string {
 }
 
 func (c *IntegrationContext) Ready() {
+	c.integration.SetupState = nil
 	c.integration.State = models.IntegrationStateReady
 	c.integration.StateDescription = ""
 }
@@ -454,4 +460,21 @@ func (c *IntegrationContext) FindSubscription(predicate func(core.IntegrationSub
 	}
 
 	return nil, nil
+}
+
+func (c *IntegrationContext) LegacySetup() bool {
+	return c.integration.IsLegacy()
+}
+
+func (c *IntegrationContext) Properties() core.IntegrationPropertyStorage {
+	return NewIntegrationPropertyStorage(c.integration)
+}
+
+func (c *IntegrationContext) Secrets() core.IntegrationSecretStorage {
+	if c.secretStorage != nil {
+		return c.secretStorage
+	}
+
+	c.secretStorage = NewIntegrationSecretStorage(c.tx, c.encryptor, c.integration)
+	return c.secretStorage
 }

@@ -9,9 +9,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/superplanehq/superplane/pkg/authorization"
@@ -19,10 +22,12 @@ import (
 	"github.com/superplanehq/superplane/pkg/database"
 	"github.com/superplanehq/superplane/pkg/jwt"
 	"github.com/superplanehq/superplane/pkg/models"
+	pbCanvases "github.com/superplanehq/superplane/pkg/protos/canvases"
 	usagepb "github.com/superplanehq/superplane/pkg/protos/usage"
 	"github.com/superplanehq/superplane/pkg/registry"
 	"github.com/superplanehq/superplane/pkg/usage"
 	"github.com/superplanehq/superplane/test/support"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +43,7 @@ func (s *fakePublicUsageService) SetupAccount(context.Context, string) (*usagepb
 	return &usagepb.SetupAccountResponse{}, nil
 }
 
-func (s *fakePublicUsageService) SetupOrganization(context.Context, string, string) (*usagepb.SetupOrganizationResponse, error) {
+func (s *fakePublicUsageService) SetupOrganization(context.Context, string, string, usage.SetupOrganizationDetails) (*usagepb.SetupOrganizationResponse, error) {
 	return &usagepb.SetupOrganizationResponse{}, nil
 }
 
@@ -190,6 +195,126 @@ func Test__GRPCGatewayRegistration(t *testing.T) {
 
 	require.Equal(t, "", response.Body.String())
 	require.Equal(t, 200, response.Code)
+}
+
+func Test__HandleWebhook_DoesNotRunNodesForSoftDeletedOrganization(t *testing.T) {
+	r := support.Setup(t)
+	defer r.Close()
+
+	signer := jwt.NewSigner("test")
+	server, err := NewServer(
+		r.Encryptor,
+		r.Registry,
+		signer,
+		support.NewOIDCProvider(),
+		"",
+		"http://localhost",
+		"http://localhost",
+		"test",
+		"/app/templates",
+		r.AuthService,
+		nil,
+		false,
+	)
+	require.NoError(t, err)
+
+	webhookID := uuid.New()
+	webhook := models.Webhook{
+		ID:     webhookID,
+		State:  models.WebhookStateReady,
+		Secret: []byte("secret"),
+	}
+	require.NoError(t, database.Conn().Create(&webhook).Error)
+
+	nodeID := "start-1"
+	canvas, _ := support.CreateCanvas(
+		t,
+		r.Organization.ID,
+		r.User,
+		[]models.CanvasNode{
+			{
+				NodeID: nodeID,
+				Type:   models.NodeTypeTrigger,
+				Ref:    datatypes.NewJSONType(models.NodeRef{Trigger: &models.TriggerRef{Name: "start"}}),
+			},
+		},
+		[]models.Edge{},
+	)
+	require.NoError(t, database.Conn().
+		Model(&models.CanvasNode{}).
+		Where("workflow_id = ?", canvas.ID).
+		Where("node_id = ?", nodeID).
+		Update("webhook_id", webhookID).
+		Error)
+
+	require.NoError(t, models.SoftDeleteOrganization(r.Organization.ID.String()))
+
+	response := execRequest(server, requestParams{
+		method: "POST",
+		path:   "/webhooks/" + webhookID.String(),
+		body:   []byte(`{"ok": true}`),
+	})
+
+	require.Equal(t, http.StatusNotFound, response.Code)
+
+	eventCount, err := models.CountCanvasEvents(canvas.ID, nodeID)
+	require.NoError(t, err)
+	assert.Zero(t, eventCount)
+}
+
+type canvasesGatewayStubServer struct {
+	pbCanvases.UnimplementedCanvasesServer
+	createCanvasCalled bool
+}
+
+func (s *canvasesGatewayStubServer) CreateCanvas(
+	context.Context,
+	*pbCanvases.CreateCanvasRequest,
+) (*pbCanvases.CreateCanvasResponse, error) {
+	s.createCanvasCalled = true
+	return &pbCanvases.CreateCanvasResponse{}, nil
+}
+
+func Test__GRPCGatewayRejectsUnknownFields(t *testing.T) {
+	mux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, newGRPCGatewayMarshaler()),
+	)
+
+	server := &canvasesGatewayStubServer{}
+	err := pbCanvases.RegisterCanvasesHandlerServer(context.Background(), mux, server)
+	require.NoError(t, err)
+
+	requestBody := `{
+  "canvas": {
+    "metadata": { "name": "unknown-field-test" },
+    "spec": {
+      "nodes": [{
+        "id": "wait-1",
+        "name": "wait",
+        "type": "TYPE_ACTION",
+        "component": "wait",
+        "hello": "what"
+      }],
+      "edges": []
+    }
+  }
+}`
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/canvases", strings.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	var statusBody struct {
+		Code    int32  `json:"code"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &statusBody))
+	require.Equal(t, int32(3), statusBody.Code)
+	require.Contains(t, statusBody.Message, `unknown field "hello"`)
+	require.False(t, server.createCanvasCalled)
 }
 
 // Helper function to check if the required Swagger files exist

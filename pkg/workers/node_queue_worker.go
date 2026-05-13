@@ -229,7 +229,7 @@ func (w *NodeQueueWorker) processNode(tx *gorm.DB, logger *log.Entry, node *mode
 		return nil, nil, err
 	}
 
-	ctx, err := contexts.BuildProcessQueueContext(w.registry.HTTPContext(), tx, node, queueItem, configFields, onNewEvents)
+	ctx, err := contexts.BuildProcessQueueContext(w.registry.HTTPContextInTransaction(tx), tx, node, queueItem, configFields, onNewEvents)
 	if err != nil {
 
 		//
@@ -287,12 +287,12 @@ func (w *NodeQueueWorker) configurationFieldsForNode(tx *gorm.DB, node *models.C
 			return nil, fmt.Errorf("node %s has no component reference", node.NodeID)
 		}
 
-		comp, err := w.registry.GetComponent(ref.Component.Name)
+		action, err := w.registry.GetAction(ref.Component.Name)
 		if err != nil {
-			return nil, fmt.Errorf("component %s not found: %w", ref.Component.Name, err)
+			return nil, fmt.Errorf("action %s not found: %w", ref.Component.Name, err)
 		}
 
-		return comp.Configuration(), nil
+		return action.Configuration(), nil
 	case models.NodeTypeBlueprint:
 		if ref.Blueprint == nil || ref.Blueprint.ID == "" {
 			return nil, fmt.Errorf("node %s has no blueprint reference", node.NodeID)
@@ -316,12 +316,12 @@ func (w *NodeQueueWorker) processComponentNode(ctx *core.ProcessQueueContext, no
 		return nil, fmt.Errorf("node %s has no component reference", node.NodeID)
 	}
 
-	comp, err := w.registry.GetComponent(ref.Component.Name)
+	action, err := w.registry.GetAction(ref.Component.Name)
 	if err != nil {
-		return nil, fmt.Errorf("component %s not found: %w", ref.Component.Name, err)
+		return nil, fmt.Errorf("action %s not found: %w", ref.Component.Name, err)
 	}
 
-	return comp.ProcessQueueItem(*ctx)
+	return action.ProcessQueueItem(*ctx)
 }
 
 func (w *NodeQueueWorker) handleNodeConfigurationError(tx *gorm.DB, logger *log.Entry, configErr *contexts.ConfigurationBuildError) ([]*uuid.UUID, error) {
@@ -344,6 +344,7 @@ func (w *NodeQueueWorker) handleNodeConfigurationError(tx *gorm.DB, logger *log.
 		WorkflowID:          configErr.QueueItem.WorkflowID,
 		NodeID:              configErr.Node.NodeID,
 		RootEventID:         configErr.RootEventID,
+		RunID:               configErr.QueueItem.RunID,
 		EventID:             configErr.Event.ID,
 		PreviousExecutionID: configErr.Event.ExecutionID,
 		ParentExecutionID:   parentExecutionID,
@@ -362,6 +363,10 @@ func (w *NodeQueueWorker) handleNodeConfigurationError(tx *gorm.DB, logger *log.
 	}
 
 	if parentExecutionID == nil {
+		if _, err := models.MaybeFinalizeRunInTransaction(tx, execution.RunID); err != nil {
+			return nil, err
+		}
+
 		return []*uuid.UUID{&execution.ID}, nil
 	}
 

@@ -18,6 +18,7 @@ import { updateMemoryMapper } from "./updateMemory";
 import { upsertMemoryMapper } from "./upsertMemory";
 import { ifMapper, IF_STATE_REGISTRY } from "./if";
 import { httpMapper, HTTP_STATE_REGISTRY } from "./http";
+import { graphqlMapper, GRAPHQL_STATE_REGISTRY } from "./graphql";
 import {
   componentMappers as semaphoreComponentMappers,
   triggerRenderers as semaphoreTriggerRenderers,
@@ -27,7 +28,6 @@ import {
   componentMappers as githubComponentMappers,
   triggerRenderers as githubTriggerRenderers,
   eventStateRegistry as githubEventStateRegistry,
-  customFieldRenderers as githubCustomFieldRenderers,
 } from "./github/index";
 import {
   componentMappers as gitlabComponentMappers,
@@ -235,9 +235,15 @@ import {
   triggerRenderers as elasticTriggerRenderers,
   eventStateRegistry as elasticEventStateRegistry,
 } from "./elastic/index";
+import {
+  componentMappers as ociComponentMappers,
+  triggerRenderers as ociTriggerRenderers,
+  eventStateRegistry as ociEventStateRegistry,
+} from "./oci/index";
 
 import { filterMapper, FILTER_STATE_REGISTRY } from "./filter";
 import { sshMapper, SSH_STATE_REGISTRY } from "./ssh";
+import { runnerMapper, RUNNER_STATE_REGISTRY } from "./runner";
 import { waitCustomFieldRenderer, waitMapper, WAIT_STATE_REGISTRY } from "./wait";
 import { approvalMapper, APPROVAL_STATE_REGISTRY } from "./approval";
 import { mergeMapper, MERGE_STATE_REGISTRY } from "./merge";
@@ -266,7 +272,9 @@ const componentBaseMappers: Record<string, ComponentBaseMapper> = {
   upsertMemory: upsertMemoryMapper,
   if: ifMapper,
   http: httpMapper,
+  graphql: graphqlMapper,
   ssh: sshMapper,
+  runner: runnerMapper,
   timeGate: timeGateMapper,
   filter: filterMapper,
   wait: waitMapper,
@@ -318,6 +326,7 @@ const appMappers: Record<string, Record<string, ComponentBaseMapper>> = {
   harness: harnessComponentMappers,
   servicenow: servicenowComponentMappers,
   elastic: elasticComponentMappers,
+  oci: ociComponentMappers,
 };
 
 const appTriggerRenderers: Record<string, Record<string, TriggerRenderer>> = {
@@ -363,6 +372,7 @@ const appTriggerRenderers: Record<string, Record<string, TriggerRenderer>> = {
   harness: harnessTriggerRenderers,
   servicenow: servicenowTriggerRenderers,
   elastic: elasticTriggerRenderers,
+  oci: ociTriggerRenderers,
 };
 
 const appEventStateRegistries: Record<string, Record<string, EventStateRegistry>> = {
@@ -407,12 +417,15 @@ const appEventStateRegistries: Record<string, Record<string, EventStateRegistry>
   harness: harnessEventStateRegistry,
   servicenow: servicenowEventStateRegistry,
   elastic: elasticEventStateRegistry,
+  oci: ociEventStateRegistry,
 };
 
 const eventStateRegistries: Record<string, EventStateRegistry> = {
   approval: APPROVAL_STATE_REGISTRY,
   http: HTTP_STATE_REGISTRY,
+  graphql: GRAPHQL_STATE_REGISTRY,
   ssh: SSH_STATE_REGISTRY,
+  runner: RUNNER_STATE_REGISTRY,
   filter: FILTER_STATE_REGISTRY,
   if: IF_STATE_REGISTRY,
   timeGate: TIME_GATE_STATE_REGISTRY,
@@ -428,7 +441,6 @@ const customFieldRenderers: Record<string, CustomFieldRenderer> = {
 };
 
 const appCustomFieldRenderers: Record<string, Record<string, CustomFieldRenderer>> = {
-  github: githubCustomFieldRenderers,
   grafana: grafanaCustomFieldRenderers,
   newrelic: newrelicCustomFieldRenderers,
   prometheus: prometheusCustomFieldRenderers,

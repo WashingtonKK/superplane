@@ -10,6 +10,7 @@ import (
 	"github.com/superplanehq/superplane/pkg/models"
 	pb "github.com/superplanehq/superplane/pkg/protos/canvases"
 	"github.com/superplanehq/superplane/pkg/registry"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -58,13 +59,17 @@ func (p *CanvasPatcher) GetVersion() *models.CanvasVersion {
 
 func (p *CanvasPatcher) buildFinalVersion(autoLayout *pb.CanvasAutoLayout) (*models.CanvasVersion, error) {
 	v := &models.CanvasVersion{
-		ID:          p.originalVersion.ID,
-		WorkflowID:  p.originalVersion.WorkflowID,
-		OwnerID:     p.originalVersion.OwnerID,
-		State:       p.originalVersion.State,
-		PublishedAt: p.originalVersion.PublishedAt,
-		CreatedAt:   p.originalVersion.CreatedAt,
-		UpdatedAt:   p.originalVersion.UpdatedAt,
+		ID:                      p.originalVersion.ID,
+		WorkflowID:              p.originalVersion.WorkflowID,
+		OwnerID:                 p.originalVersion.OwnerID,
+		State:                   p.originalVersion.State,
+		Name:                    p.originalVersion.Name,
+		Description:             p.originalVersion.Description,
+		ChangeManagementEnabled: p.originalVersion.ChangeManagementEnabled,
+		ChangeRequestApprovers:  datatypes.NewJSONSlice(p.originalVersion.EffectiveChangeRequestApprovers()),
+		PublishedAt:             p.originalVersion.PublishedAt,
+		CreatedAt:               p.originalVersion.CreatedAt,
+		UpdatedAt:               p.originalVersion.UpdatedAt,
 	}
 
 	nodeIDs := make([]string, 0, len(p.nodes))
@@ -238,18 +243,22 @@ func (p *CanvasPatcher) validateIntegration(node *pb.CanvasChangeset_Change_Node
 		return nil, fmt.Errorf("integration is required for %s", node.GetBlock())
 	}
 
-	integration := node.GetIntegrationId()
-	integrationID, err := uuid.Parse(integration)
+	id := node.GetIntegrationId()
+	integrationID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("invalid integration id: %v", err)
 	}
 
-	_, err = models.FindIntegrationInTransaction(p.tx, p.orgID, integrationID)
+	integration, err := models.FindIntegrationInTransaction(p.tx, p.orgID, integrationID)
 	if err != nil {
-		return nil, fmt.Errorf("integration %s not found", node.GetIntegrationId())
+		return nil, fmt.Errorf("integration %s not found", id)
 	}
 
-	return &integration, nil
+	if !integration.HasCapabilityEnabled(node.GetBlock()) {
+		return nil, fmt.Errorf("%s is not enabled for integration %s", node.GetBlock(), integration.InstallationName)
+	}
+
+	return &id, nil
 }
 
 func (p *CanvasPatcher) deleteNode(change *pb.CanvasChangeset_Change) error {
@@ -350,12 +359,12 @@ func (p *CanvasPatcher) updateNode(change *pb.CanvasChangeset_Change) error {
 func (p *CanvasPatcher) findConfigurationSchemaForNode(nodeType string, nodeRef models.NodeRef) ([]configuration.Field, error) {
 	switch nodeType {
 	case models.NodeTypeComponent:
-		component, err := p.registry.GetComponent(nodeRef.Component.Name)
+		action, err := p.registry.GetAction(nodeRef.Component.Name)
 		if err != nil {
 			return nil, err
 		}
 
-		return component.Configuration(), nil
+		return action.Configuration(), nil
 
 	case models.NodeTypeTrigger:
 		trigger, err := p.registry.GetTrigger(nodeRef.Trigger.Name)
@@ -408,6 +417,14 @@ func (p *CanvasPatcher) addEdge(change *pb.CanvasChangeset_Change) error {
 		return fmt.Errorf("target node %s not found", edge.GetTargetId())
 	}
 
+	if err := ValidateSourceNodeOutputChannel(
+		p.registry,
+		p.nodes[edge.GetSourceId()],
+		edge.GetChannel(),
+	); err != nil {
+		return err
+	}
+
 	edgeKey := p.edgeKey(edge.GetSourceId(), edge.GetTargetId(), edge.GetChannel())
 	if _, exists := p.edges[edgeKey]; exists {
 		return nil
@@ -455,9 +472,9 @@ func (p *CanvasPatcher) findBlock(node *pb.CanvasChangeset_Change_Node) (string,
 	}
 
 	//
-	// Check if the block is a component
+	// Check if the block is an action
 	//
-	_, err := p.registry.GetComponent(node.GetBlock())
+	_, err := p.registry.GetAction(node.GetBlock())
 	if err == nil {
 		return models.NodeTypeComponent, &models.NodeRef{
 			Component: &models.ComponentRef{Name: node.GetBlock()},

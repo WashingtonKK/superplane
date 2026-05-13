@@ -1,12 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { Puzzle } from "lucide-react";
 import {
-  canvasesInvokeNodeExecutionAction,
-  type BlueprintsBlueprint,
+  canvasesInvokeNodeExecutionHook,
+  canvasesInvokeNodeTriggerHook,
   type CanvasesCanvasEvent,
   type CanvasesCanvasNodeExecution,
   type CanvasesCanvasNodeQueueItem,
-  type ComponentsComponent,
+  type SuperplaneActionsAction,
   type SuperplaneComponentsEdge as ComponentsEdge,
   type SuperplaneComponentsNode as ComponentsNode,
   type TriggersTrigger,
@@ -16,13 +16,16 @@ import { getApiErrorMessage } from "@/lib/errors";
 import { showErrorToast } from "@/lib/toast";
 import { getHeaderIconSrc } from "@/ui/componentSidebar/integrationIcons";
 import type { CanvasNode } from "@/ui/CanvasPage";
-import type { CompositeProps, LastRunState } from "@/ui/composite";
-import type { ActionContext, ComponentBaseMapper, User } from "../mappers/types";
+import type {
+  ActionContext,
+  ComponentBaseMapper,
+  TriggerActionContext,
+  TriggerActionModal,
+  User,
+} from "../mappers/types";
 import { getComponentBaseMapper, getTriggerRenderer } from "../mappers";
 import { buildComponentFallbackCanvasNode, buildTriggerFallbackCanvasNode } from "./canvas-node-fallback";
 
-export const CANVAS_BUNDLE_ICON_SLUG = "component";
-export const CANVAS_BUNDLE_COLOR = "gray";
 import {
   buildComponentDefinition,
   buildEventInfo,
@@ -30,7 +33,6 @@ import {
   buildNodeInfo,
   buildQueueItemInfo,
   buildUserInfo,
-  getNextInQueueInfo,
 } from "../utils";
 import { canvasKeys } from "@/hooks/useCanvasData";
 import { withOrganizationHeader } from "@/lib/withOrganizationHeader";
@@ -38,7 +40,7 @@ import { withOrganizationHeader } from "@/lib/withOrganizationHeader";
 type PrepareComponentNodeArgs = {
   nodes: ComponentsNode[];
   node: ComponentsNode;
-  components: ComponentsComponent[];
+  components: SuperplaneActionsAction[];
   nodeExecutionsMap: Record<string, CanvasesCanvasNodeExecution[]>;
   nodeQueueItemsMap: Record<string, CanvasesCanvasNodeQueueItem[]>;
   canvasId: string;
@@ -52,7 +54,7 @@ type PrepareComponentNodeArgs = {
 type PrepareComponentBaseNodeArgs = {
   nodes: ComponentsNode[];
   node: ComponentsNode;
-  components: ComponentsComponent[];
+  components: SuperplaneActionsAction[];
   nodeExecutionsMap: Record<string, CanvasesCanvasNodeExecution[]>;
   nodeQueueItemsMap: Record<string, CanvasesCanvasNodeQueueItem[]>;
   canvasId: string;
@@ -67,18 +69,6 @@ type NodePosition = {
   y: number;
 };
 
-function getRunItemState(execution: CanvasesCanvasNodeExecution): LastRunState {
-  if (execution.state === "STATE_PENDING" || execution.state === "STATE_STARTED") {
-    return "running";
-  }
-
-  if (execution.state === "STATE_FINISHED" && execution.result === "RESULT_PASSED") {
-    return "success";
-  }
-
-  return "failed";
-}
-
 function getNodePosition(node: ComponentsNode): NodePosition {
   return {
     x: node.position?.x ?? 0,
@@ -87,7 +77,7 @@ function getNodePosition(node: ComponentsNode): NodePosition {
 }
 
 function getTriggerDisplayLabel(node: ComponentsNode, triggerMetadata?: TriggersTrigger): string {
-  return node.name || triggerMetadata?.label || node.trigger?.name || "Trigger";
+  return node.name || triggerMetadata?.label || node.component || "Trigger";
 }
 
 function buildPreparedTriggerCanvasNode(args: {
@@ -97,15 +87,27 @@ function buildPreparedTriggerCanvasNode(args: {
   displayLabel: string;
   position: NodePosition;
   canvasMode?: "live" | "edit";
+  canvasId: string;
+  openModal?: (modal: TriggerActionModal) => void;
 }): CanvasNode {
-  const { node, triggerMetadata, nodeEventsMap, displayLabel, position, canvasMode = "live" } = args;
-  const renderer = getTriggerRenderer(node.trigger?.name || "");
+  const {
+    node,
+    triggerMetadata,
+    nodeEventsMap,
+    displayLabel,
+    position,
+    canvasMode = "live",
+    canvasId,
+    openModal,
+  } = args;
+  const renderer = getTriggerRenderer(node.component || "");
   const lastEvent = nodeEventsMap[node.id!]?.[0];
   const triggerProps = renderer.getTriggerProps({
     node: buildNodeInfo(node),
     definition: buildComponentDefinition(triggerMetadata),
     lastEvent: buildEventInfo(lastEvent),
     canvasMode,
+    actions: openModal ? buildTriggerActionContext(canvasId, node.id!, openModal) : undefined,
   });
 
   return {
@@ -124,110 +126,6 @@ function buildPreparedTriggerCanvasNode(args: {
       },
     },
   };
-}
-
-function buildCompositeFieldLabelMap(blueprintMetadata?: BlueprintsBlueprint): Record<string, string> {
-  const configurationFields = blueprintMetadata?.configuration || [];
-
-  return configurationFields.reduce<Record<string, string>>((acc, field) => {
-    if (field.name) {
-      acc[field.name] = field.label || field.name;
-    }
-    return acc;
-  }, {});
-}
-
-function buildCompositeParameters(
-  node: ComponentsNode,
-  fieldLabelMap: Record<string, string>,
-): CompositeProps["parameters"] {
-  const configuration = node.configuration || {};
-  const configurationKeys = Object.keys(configuration);
-
-  if (configurationKeys.length === 0) {
-    return [];
-  }
-
-  return [
-    {
-      icon: "cog",
-      items: configurationKeys.reduce(
-        (acc, key) => {
-          const displayKey = fieldLabelMap[key] || key;
-          acc[displayKey] = `${configuration[key]}`;
-          return acc;
-        },
-        {} as Record<string, string>,
-      ),
-    },
-  ];
-}
-
-function buildCompositeCanvasNode(args: {
-  node: ComponentsNode;
-  displayLabel: string;
-  blueprintMetadata?: BlueprintsBlueprint;
-  isMissing: boolean;
-  position: { x: number; y: number };
-  parameters: CompositeProps["parameters"];
-}): CanvasNode {
-  const { node, displayLabel, blueprintMetadata, isMissing, position, parameters } = args;
-
-  return {
-    id: node.id!,
-    position,
-    data: {
-      type: "composite",
-      label: displayLabel,
-      state: "pending" as const,
-      outputChannels: blueprintMetadata?.outputChannels?.map((c) => c.name!) || ["default"],
-      composite: {
-        iconSlug: CANVAS_BUNDLE_ICON_SLUG,
-        iconColor: getColorClass(CANVAS_BUNDLE_COLOR),
-        collapsedBackground: getBackgroundColorClass(CANVAS_BUNDLE_COLOR),
-        collapsed: node.isCollapsed,
-        title: displayLabel,
-        description: blueprintMetadata?.description,
-        isMissing,
-        error: node.errorMessage,
-        warning: node.warningMessage,
-        paused: !!node.paused,
-        parameters,
-      },
-    },
-  };
-}
-
-function appendCompositeLastRunItem(
-  canvasNode: CanvasNode,
-  execution: CanvasesCanvasNodeExecution,
-  nodes: ComponentsNode[],
-) {
-  const rootTriggerNode = nodes.find((n) => n.id === execution.rootEvent?.nodeId);
-  const rootTriggerRenderer = getTriggerRenderer(rootTriggerNode?.trigger?.name || "");
-  const eventInfo = buildEventInfo(execution.rootEvent!);
-  const { title, subtitle } = rootTriggerRenderer.getTitleAndSubtitle({ event: eventInfo });
-
-  (canvasNode.data.composite as CompositeProps).lastRunItem = {
-    title,
-    subtitle,
-    id: execution.rootEvent?.id,
-    receivedAt: new Date(execution.createdAt!),
-    state: getRunItemState(execution),
-    values: rootTriggerRenderer.getRootEventValues({ event: eventInfo }),
-  };
-}
-
-function appendCompositeQueueInfo(
-  canvasNode: CanvasNode,
-  nodeId: string,
-  nodeQueueItemsMap: Record<string, CanvasesCanvasNodeQueueItem[]>,
-  nodes: ComponentsNode[],
-) {
-  const nextInQueueInfo = getNextInQueueInfo(nodeQueueItemsMap, nodeId, nodes);
-  if (nextInQueueInfo) {
-    (canvasNode.data.composite as CompositeProps).nextInQueue = nextInQueueInfo;
-  }
 }
 
 function buildPlaceholderComponentNode(node: ComponentsNode): CanvasNode {
@@ -282,8 +180,9 @@ export function prepareTriggerNode(
   triggers: TriggersTrigger[],
   nodeEventsMap: Record<string, CanvasesCanvasEvent[]>,
   canvasMode: "live" | "edit" = "live",
+  options: { canvasId: string; openModal?: (modal: TriggerActionModal) => void },
 ): CanvasNode {
-  const triggerMetadata = triggers.find((t) => t.name === node.trigger?.name);
+  const triggerMetadata = triggers.find((t) => t.name === node.component);
   const displayLabel = getTriggerDisplayLabel(node, triggerMetadata);
   const position = getNodePosition(node);
 
@@ -295,6 +194,8 @@ export function prepareTriggerNode(
       displayLabel,
       position,
       canvasMode,
+      canvasId: options.canvasId,
+      openModal: options.openModal,
     });
   } catch (error) {
     console.error(`[CanvasPage] Failed to prepare trigger node "${node.id}":`, error);
@@ -302,43 +203,10 @@ export function prepareTriggerNode(
   }
 }
 
-export function prepareCompositeNode(
-  nodes: ComponentsNode[],
-  node: ComponentsNode,
-  blueprints: BlueprintsBlueprint[],
-  nodeExecutionsMap: Record<string, CanvasesCanvasNodeExecution[]>,
-  nodeQueueItemsMap: Record<string, CanvasesCanvasNodeQueueItem[]>,
-): CanvasNode {
-  const blueprintMetadata = blueprints.find((b) => b.id === node.blueprint?.id);
-  const isMissing = !blueprintMetadata;
-  const executions = nodeExecutionsMap[node.id!] || [];
-  const displayLabel = node.name || blueprintMetadata?.name || "Composite";
-  const position = getNodePosition(node);
-
-  const fieldLabelMap = buildCompositeFieldLabelMap(blueprintMetadata);
-  const parameters = buildCompositeParameters(node, fieldLabelMap);
-  const canvasNode = buildCompositeCanvasNode({
-    node,
-    displayLabel,
-    blueprintMetadata,
-    isMissing,
-    position,
-    parameters,
-  });
-
-  if (executions.length > 0) {
-    appendCompositeLastRunItem(canvasNode, executions[0], nodes);
-  }
-
-  appendCompositeQueueInfo(canvasNode, node.id!, nodeQueueItemsMap, nodes);
-
-  return canvasNode;
-}
-
 export function prepareComponentNode(args: PrepareComponentNodeArgs): CanvasNode {
   const { nodes, node, components, nodeExecutionsMap, nodeQueueItemsMap, canvasId, queryClient, currentUser, edges } =
     args;
-  const isPlaceholder = !node.component?.name && node.name === "New Component";
+  const isPlaceholder = !node.component && node.name === "New Component";
 
   if (isPlaceholder) {
     return buildPlaceholderComponentNode(node);
@@ -361,17 +229,17 @@ export function prepareComponentNode(args: PrepareComponentNodeArgs): CanvasNode
 export function prepareComponentBaseNode(args: PrepareComponentBaseNodeArgs): CanvasNode {
   const { nodes, node, components, nodeExecutionsMap, nodeQueueItemsMap, canvasId, queryClient, currentUser } = args;
   const executions = nodeExecutionsMap[node.id!] || [];
-  const metadata = components.find((c) => c.name === node.component?.name);
-  const displayLabel = node.name || metadata?.label || node.component?.name || "Component";
-  const componentDef = components.find((c) => c.name === node.component?.name);
+  const metadata = components.find((c) => c.name === node.component);
+  const displayLabel = node.name || metadata?.label || node.component || "Component";
+  const componentDef = components.find((c) => c.name === node.component);
   const fallbackComponentDef = componentDef || {
-    name: node.component?.name,
+    name: node.component,
     label: node.name,
   };
   const nodeQueueItems = nodeQueueItemsMap?.[node.id!];
 
   try {
-    const componentBaseProps = getComponentBaseMapper(node.component?.name || "").props({
+    const componentBaseProps = getComponentBaseMapper(node.component || "").props({
       nodes: nodes.map((n) => buildNodeInfo(n)),
       node: buildNodeInfo(node),
       componentDefinition: buildComponentDefinition(fallbackComponentDef),
@@ -383,7 +251,7 @@ export function prepareComponentBaseNode(args: PrepareComponentBaseNodeArgs): Ca
     });
 
     if (!componentBaseProps.iconSrc) {
-      const resolvedIconSrc = getHeaderIconSrc(node.component?.name);
+      const resolvedIconSrc = getHeaderIconSrc(node.component);
       if (resolvedIconSrc) {
         componentBaseProps.iconSrc = resolvedIconSrc;
       }
@@ -416,14 +284,14 @@ export function prepareComponentBaseNode(args: PrepareComponentBaseNodeArgs): Ca
 
 function buildActionContext(queryClient: QueryClient, canvasId: string, nodeId: string): ActionContext {
   return {
-    invokeNodeExecutionAction: async (executionId: string, actionName: string, parameters: unknown) => {
+    invokeNodeExecutionHook: async (executionId: string, hookName: string, parameters: unknown) => {
       try {
-        await canvasesInvokeNodeExecutionAction(
+        await canvasesInvokeNodeExecutionHook(
           withOrganizationHeader({
             path: {
               canvasId,
               executionId,
-              actionName,
+              hookName,
             },
             body: {
               parameters,
@@ -434,8 +302,37 @@ function buildActionContext(queryClient: QueryClient, canvasId: string, nodeId: 
           queryKey: canvasKeys.nodeExecution(canvasId, nodeId),
         });
       } catch (error) {
-        showErrorToast(getApiErrorMessage(error, "failed to invoke action"));
+        showErrorToast(getApiErrorMessage(error, "failed to invoke hook"));
       }
     },
+  };
+}
+
+function buildTriggerActionContext(
+  canvasId: string,
+  nodeId: string,
+  openModal: (modal: TriggerActionModal) => void,
+): TriggerActionContext {
+  return {
+    invokeNodeTriggerHook: async (hookName: string, parameters: unknown) => {
+      try {
+        await canvasesInvokeNodeTriggerHook(
+          withOrganizationHeader({
+            path: {
+              canvasId,
+              nodeId,
+              hookName,
+            },
+            body: {
+              parameters,
+            },
+          }),
+        );
+      } catch (error) {
+        showErrorToast(getApiErrorMessage(error, "failed to invoke hook"));
+        throw error;
+      }
+    },
+    openModal,
   };
 }
